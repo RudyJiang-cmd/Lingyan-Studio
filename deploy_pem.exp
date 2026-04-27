@@ -1,0 +1,38 @@
+#!/usr/bin/expect -f
+set timeout 300
+set ip [lindex $argv 0]
+set password [lindex $argv 1]
+set user [lindex $argv 2]
+
+# 1. 上传打包文件
+spawn scp -i TRAE.pem -o StrictHostKeyChecking=no dist.tar.gz $user@$ip:/home/$user/
+expect {
+    "*assword:*" { send "$password\r"; exp_continue }
+    eof
+}
+
+# 2. 执行远程部署命令
+spawn ssh -i TRAE.pem -o StrictHostKeyChecking=no $user@$ip
+expect {
+    "*assword:*" { send "$password\r"; exp_continue }
+    "*$*" { send "mkdir -p /home/ubuntu/dist && tar -xzf /home/ubuntu/dist.tar.gz -C /home/ubuntu/dist/\r" }
+}
+
+expect "*$*"
+send "sudo cp -r /home/ubuntu/dist/* /var/www/html/\r"
+
+expect "*$*"
+send "sudo chown -R www-data:www-data /var/www/html/\r"
+
+expect "*$*"
+send "sudo chmod -R 755 /var/www/html/\r"
+
+expect "*$*"
+send "sudo systemctl restart nginx\r"
+
+expect "*$*"
+send "echo DEPLOY_SUCCESS\r"
+
+expect "*$*"
+send "exit\r"
+expect eof
