@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎵 交互式 AI 和声生成器 (Interactive Harmony Generator)
+# 🎵 灵岩谱曲台 (Lingyan Composing Platform)
 
 **基于 React 打造的 Google Bach Doodle 复刻项目**<br>
 为您提供一个优雅的、可视化的四声部和声创作体验。

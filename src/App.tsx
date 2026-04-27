@@ -665,7 +665,7 @@ function App() {
     <div className="min-h-screen bg-[#FDFBF7] text-[#3E2723] font-serif flex flex-col items-center py-10 px-4">
       <header className="mb-8 text-center max-w-2xl">
         <h1 className="text-4xl md:text-5xl font-bold mb-3 text-[#2D1B15] tracking-tight">
-          敦煌音乐实验室
+          灵岩谱曲台
         </h1>
         <p className="text-[#5D4037] text-sm md:text-base font-sans leading-relaxed">
           在下方五线谱上随意挥洒您的音符（黑色），点击“播放”或“生成和声”按钮，您的旋律将自动吸附至敦煌音阶（1-2-3-♯4-5-6）与节奏中，并为您随机编排多声部合唱。
@@ -706,7 +706,7 @@ function App() {
       </div>
       
       <footer className="mt-auto pt-8 text-[#8D6E63] text-xs font-sans text-center">
-        敦煌音乐实验室 - Dunhuang Music Lab | 基于 1-2-3-♯4-5-6 敦煌音阶体系
+        灵岩谱曲台 - Lingyan Composing Platform | 基于 1-2-3-♯4-5-6 敦煌音阶体系
       </footer>
     </div>
   );
