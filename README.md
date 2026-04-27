@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎵 灵岩谱曲台 (Lingyan Composing Platform)
+# 🎵 灵岩谱曲台 (Lingyan Studio)
 
 **一款充满异域色彩的智能音乐创作工具**<br>
 为您提供一个优雅的、可视化的四声部和声创作体验。
