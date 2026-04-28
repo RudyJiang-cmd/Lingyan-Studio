@@ -58,10 +58,15 @@ TICKS_PER_STEP = TICKS_PER_BEAT // 4
 POS_PER_STEP = 3
 GENERATED_VOICES = ("alto", "tenor", "bass")
 ALLOWED_PITCHES = (0, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14)
-VOICE_TARGET_OFFSETS = {
-    "alto": 2,
-    "tenor": 5,
-    "bass": 8,
+VOICE_TARGET_INTERVALS = {
+    "alto": -3,
+    "tenor": -8,
+    "bass": -14,
+}
+VOICE_PITCH_RANGES = {
+    "alto": (6, 12),
+    "tenor": (9, 13),
+    "bass": (11, 14),
 }
 
 PITCH_TO_MIDI = {
@@ -93,6 +98,10 @@ def midi_to_pitch_index(midi_pitch: int) -> int:
             best_diff = diff
             best_pitch_index = pitch_index
     return best_pitch_index
+
+
+def pitch_index_to_midi(pitch_index: int) -> int:
+    return PITCH_TO_MIDI[pitch_index]
 
 
 def build_prompt_token_strs(melody_json):
@@ -128,36 +137,6 @@ def build_prompt_token_strs(melody_json):
         ignore_ts=True,
     )
     return midi_encoder.convert_token_lists_to_token_str_lists(token_lists)[0]
-
-
-def clamp_to_allowed_pitch(target_pitch: int) -> Optional[int]:
-    for allowed_pitch in ALLOWED_PITCHES:
-        if allowed_pitch >= target_pitch:
-            return allowed_pitch
-    return None
-
-
-def nearest_unused_pitch(
-    target_pitch: int,
-    used_pitches: Set[int],
-    user_pitch: Optional[int],
-) -> Optional[int]:
-    ranked_pitches = sorted(
-        ALLOWED_PITCHES,
-        key=lambda pitch: (
-            pitch in used_pitches,
-            user_pitch is not None and pitch == user_pitch,
-            abs(pitch - target_pitch),
-            pitch,
-        ),
-    )
-    for pitch in ranked_pitches:
-        if pitch in used_pitches:
-            continue
-        if user_pitch is not None and pitch == user_pitch:
-            continue
-        return pitch
-    return None
 
 
 def parse_generated_pitch_candidates(token_strs, prompt_token_count: int):
@@ -222,39 +201,128 @@ def get_step_candidate_pitches(
     return []
 
 
+def choose_voice_pitch(
+    voice: str,
+    user_pitch: int,
+    candidate_pitches: List[int],
+    used_pitches: Set[int],
+    previous_voice_pitch: Optional[int],
+    lower_bound_midi: Optional[int],
+) -> Optional[int]:
+    user_midi = pitch_index_to_midi(user_pitch)
+    target_midi = user_midi + VOICE_TARGET_INTERVALS[voice]
+    range_min, range_max = VOICE_PITCH_RANGES[voice]
+
+    def score_pitch(pitch_index: int) -> float:
+        candidate_midi = pitch_index_to_midi(pitch_index)
+        score = abs(candidate_midi - target_midi)
+
+        if previous_voice_pitch is not None:
+            previous_midi = pitch_index_to_midi(previous_voice_pitch)
+            score += abs(candidate_midi - previous_midi) * 0.45
+
+        if lower_bound_midi is not None and candidate_midi <= lower_bound_midi:
+            score += (lower_bound_midi - candidate_midi + 1) * 4
+
+        if pitch_index < range_min:
+            score += (range_min - pitch_index) * 6
+        elif pitch_index > range_max:
+            score += (pitch_index - range_max) * 6
+
+        return score
+
+    available_candidates = [
+        pitch for pitch in candidate_pitches
+        if pitch not in used_pitches and pitch != user_pitch
+    ]
+    in_range_candidates = [
+        pitch for pitch in available_candidates
+        if range_min <= pitch <= range_max
+    ]
+    if in_range_candidates:
+        return min(in_range_candidates, key=score_pitch)
+
+    fallback_pitches = [
+        pitch for pitch in ALLOWED_PITCHES
+        if pitch not in used_pitches and pitch != user_pitch
+    ]
+    in_range_fallback_pitches = [
+        pitch for pitch in fallback_pitches
+        if range_min <= pitch <= range_max
+    ]
+    if in_range_fallback_pitches:
+        return min(in_range_fallback_pitches, key=score_pitch)
+
+    if available_candidates:
+        return min(available_candidates, key=score_pitch)
+
+    if not fallback_pitches:
+        return None
+
+    return min(fallback_pitches, key=score_pitch)
+
+
 def arrange_harmony_notes(user_melody, step_candidates):
     if not user_melody:
         return []
 
     generated_notes = []
+    previous_voice_pitches: Dict[str, Optional[int]] = {
+        "alto": None,
+        "tenor": None,
+        "bass": None,
+    }
     for note in sorted(user_melody, key=lambda item: item.get("step", 0)):
         step = max(0, min(TOTAL_STEPS - 1, int(round(note.get("step", 0)))))
         user_pitch = int(round(note.get("pitch", 14)))
-        candidate_pitches = [
-            pitch for pitch in get_step_candidate_pitches(step, step_candidates)
-            if pitch != user_pitch
-        ]
+        candidate_pitches = get_step_candidate_pitches(step, step_candidates)
         used_pitches = {user_pitch}
+        user_midi = pitch_index_to_midi(user_pitch)
+        selected_voice_pitches: Dict[str, int] = {}
+
+        bass_pitch = choose_voice_pitch(
+            "bass",
+            user_pitch,
+            candidate_pitches,
+            used_pitches,
+            previous_voice_pitches["bass"],
+            lower_bound_midi=None,
+        )
+        if bass_pitch is not None:
+            selected_voice_pitches["bass"] = bass_pitch
+            used_pitches.add(bass_pitch)
+
+        bass_midi = pitch_index_to_midi(bass_pitch) if bass_pitch is not None else None
+        tenor_pitch = choose_voice_pitch(
+            "tenor",
+            user_pitch,
+            candidate_pitches,
+            used_pitches,
+            previous_voice_pitches["tenor"],
+            lower_bound_midi=bass_midi,
+        )
+        if tenor_pitch is not None:
+            selected_voice_pitches["tenor"] = tenor_pitch
+            used_pitches.add(tenor_pitch)
+
+        tenor_midi = pitch_index_to_midi(tenor_pitch) if tenor_pitch is not None else bass_midi
+        alto_pitch = choose_voice_pitch(
+            "alto",
+            user_pitch,
+            candidate_pitches,
+            used_pitches,
+            previous_voice_pitches["alto"],
+            lower_bound_midi=tenor_midi,
+        )
+        if alto_pitch is not None:
+            selected_voice_pitches["alto"] = alto_pitch
+            used_pitches.add(alto_pitch)
 
         for voice in GENERATED_VOICES:
-            target_pitch = clamp_to_allowed_pitch(user_pitch + VOICE_TARGET_OFFSETS[voice])
-            if target_pitch is None:
-                target_pitch = user_pitch
-
-            available_candidates = [pitch for pitch in candidate_pitches if pitch not in used_pitches]
-            chosen_pitch = None
-            if available_candidates:
-                preferred_candidates = [pitch for pitch in available_candidates if pitch > user_pitch]
-                pool = preferred_candidates or available_candidates
-                chosen_pitch = min(pool, key=lambda pitch: abs(pitch - target_pitch))
-
+            chosen_pitch = selected_voice_pitches.get(voice)
             if chosen_pitch is None:
-                chosen_pitch = nearest_unused_pitch(target_pitch, used_pitches, user_pitch)
-
-            if chosen_pitch is None or chosen_pitch == user_pitch:
                 continue
-
-            used_pitches.add(chosen_pitch)
+            previous_voice_pitches[voice] = chosen_pitch
             generated_notes.append(
                 {
                     "id": f"ai_{voice}_{step}_{chosen_pitch}_{random.randint(1000, 9999)}",
