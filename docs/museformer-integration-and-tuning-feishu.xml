@@ -1,0 +1,251 @@
+<title>Lingyan Studio：前端接入 Museformer 后端与音乐性调试全过程</title>
+
+<callout emoji="💡" background-color="light-yellow" border-color="yellow">
+  <p>这篇文档记录了当前版本如何从“纯前端静态原型”演进为“前端网站 + 模型服务器 + Museformer 推理 + 四声部回放”的完整过程，覆盖接入链路、部署修复、后端服务化、Museformer 工作方式，以及音乐性调试的方法与当前结论。</p>
+</callout>
+
+<grid>
+  <column width-ratio="0.5">
+    <p><b>线上前端</b><br/>http://118.195.252.229</p>
+  </column>
+  <column width-ratio="0.5">
+    <p><b>GitHub</b><br/>https://github.com/RudyJiang-cmd/Lingyan-Studio</p>
+  </column>
+</grid>
+
+<whiteboard type="mermaid">flowchart LR
+  A[用户在五线谱绘制主旋律] --> B[src/App.tsx 组装 melody JSON]
+  B --> C[POST 43.129.229.99:8000/generate]
+  C --> D[FastAPI /generate]
+  D --> E[miditoolkit 生成 prompt MIDI]
+  E --> F[MidiEncoder REMIGEN 编码]
+  F --> G[Museformer fairseq inference]
+  G --> H[解析 token 为 step 候选音高]
+  H --> I[alto tenor bass 后处理分配]
+  I --> J[返回 generated_notes]
+  J --> K[前端渲染并四声部播放]
+</whiteboard>
+
+<h1>1. 当前结果</h1>
+<ul>
+  <li>前端已经真实请求 Museformer 后端，而不是本地假生成。</li>
+  <li>后端已经以 <code>systemd</code> 方式稳定运行，不再挂在 SSH 会话里。</li>
+  <li>Museformer 推理链路已经打通，能够返回可展示的和声结果。</li>
+  <li>“播放”现在会同时播放玩家主旋律和 AI 生成声部。</li>
+  <li>录音失败、AI 超时、后端 500 的提示已经明确化。</li>
+  <li>和声从“经常只生成一个声部”提升到“稳定补出 alto / tenor / bass 三层”。</li>
+</ul>
+
+<h1>2. 服务器分工</h1>
+<table>
+  <thead>
+    <tr>
+      <th background-color="light-gray">角色</th>
+      <th background-color="light-gray">地址</th>
+      <th background-color="light-gray">职责</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>前端静态站点</td>
+      <td>118.195.252.229</td>
+      <td>Nginx 托管 Vite 构建产物</td>
+    </tr>
+    <tr>
+      <td>模型后端</td>
+      <td>43.129.229.99</td>
+      <td>FastAPI + Museformer 推理服务</td>
+    </tr>
+    <tr>
+      <td>代码仓库</td>
+      <td>RudyJiang-cmd/Lingyan-Studio</td>
+      <td>前后端代码、部署脚本、文档</td>
+    </tr>
+  </tbody>
+</table>
+
+<h1>3. 接入前的真实情况</h1>
+<callout emoji="⚠️" background-color="light-red" border-color="red">
+  <p>一开始最大的误区不是“没有模型服务器”，而是“本地源码已经改了”被误认为“线上已经接入 AI”。</p>
+</callout>
+<ul>
+  <li>118.195.252.229 上只有 Nginx，对外下发的还是旧静态包。</li>
+  <li>旧包里仍然保留本地规则生成逻辑，没有真正打到 43.129.229.99。</li>
+  <li>页面文案甚至还保留“未来将接入 AI 音乐大模型”。</li>
+  <li>因此整个排查必须分成两条链：前端部署链路和模型服务链路。</li>
+</ul>
+
+<h1>4. 前端接入过程</h1>
+<h2>4.1 真正切到 AI 后端</h2>
+<p>核心文件是 <code>src/App.tsx</code>。现在“生成和声”按钮会把玩家主旋律提取为 <code>[{ step, pitch }]</code>，并真实请求 <code>http://43.129.229.99:8000/generate</code>。</p>
+
+<h2>4.2 为什么要重写错误提示</h2>
+<p>早期只弹“AI 连接失败”几乎没有排查价值，因此前端改成了更细的失败分支：</p>
+<ul>
+  <li>AI 服务器响应超时（15 秒）</li>
+  <li>后端 500 detail 原样显示</li>
+  <li>空旋律不允许发请求</li>
+  <li>录音失败区分为：不安全上下文、权限被拒、设备不存在、设备占用</li>
+</ul>
+
+<h2>4.3 多声部一起播放</h2>
+<p>“播放”逻辑已经从只播主旋律，改为播放全部音符。为了让四个声部容易区分，浏览器端给了简单但清晰的音色分工：</p>
+<table>
+  <thead>
+    <tr>
+      <th background-color="light-gray">声部</th>
+      <th background-color="light-gray">合成器</th>
+      <th background-color="light-gray">处理</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>user</td><td>triangle</td><td>主旋律</td></tr>
+    <tr><td>alto</td><td>sine</td><td>高位和声</td></tr>
+    <tr><td>tenor</td><td>square</td><td>回放时下移一八度</td></tr>
+    <tr><td>bass</td><td>sawtooth</td><td>回放时下移两八度</td></tr>
+  </tbody>
+</table>
+
+<h2>4.4 录音为什么在公网 IP 上失效</h2>
+<p>不是代码逻辑断了，而是浏览器安全策略。当前站点是 <code>http://118.195.252.229</code>，很多浏览器要求 <b>HTTPS 或 localhost</b> 才允许 <code>getUserMedia</code> 打开麦克风。现在前端已经会把这个原因直接告诉用户，但要彻底修复仍然需要 HTTPS。</p>
+
+<h1>5. 部署链路修复</h1>
+<p>核心文件是 <code>deploy_pem.exp</code>。这里踩到过一个很典型的“假部署”：</p>
+<ul>
+  <li>压缩包实际解到了 <code>/home/ubuntu/dist/dist/</code></li>
+  <li>脚本却复制 <code>/home/ubuntu/dist/*</code></li>
+  <li>结果是新文件上传了，但 <code>index.html</code> 仍然可能指向旧 JS</li>
+</ul>
+<p>修复后改成：每次部署使用独立时间戳目录，解压后再从正确的 <code>dist/*</code> 覆盖 <code>/var/www/html/</code>。</p>
+
+<h1>6. Museformer 后端接入过程</h1>
+<h2>6.1 服务化</h2>
+<p>最初后端只是挂在 SSH 会话里的 Python 进程，稳定性很差。后续改成了 <code>museformer-api.service</code>，由 <code>systemd</code> 管理，能够稳定重启、查看状态和追日志。</p>
+
+<h2>6.2 Museformer 的实际工作方式</h2>
+<ol>
+  <li seq="auto">前端旋律 JSON 转成 <code>miditoolkit.MidiFile</code></li>
+  <li seq="auto">用 <code>MidiEncoder("REMIGEN")</code> 编成模型 token</li>
+  <li seq="auto">通过 <code>fairseq</code> 字典转成输入张量</li>
+  <li seq="auto">调用 <code>task.inference_step(...)</code></li>
+  <li seq="auto">把模型输出 token 解析成每个 step 的候选音高</li>
+  <li seq="auto">最后再做 alto / tenor / bass 的后处理分配</li>
+</ol>
+
+<callout emoji="📌" background-color="light-blue" border-color="blue">
+  <p>这里最关键的一点是：前端 JSON 不能直接瞎拼 token 喂给 Museformer。只有通过真实 MIDI 和 REMIGEN 编码，把词表、输入格式、解码方式全部对齐，模型输出才会变得可用。</p>
+</callout>
+
+<h1>7. 调试过程中踩到的关键问题</h1>
+<table>
+  <thead>
+    <tr>
+      <th background-color="light-gray">问题</th>
+      <th background-color="light-gray">现象</th>
+      <th background-color="light-gray">修复</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>线上仍是旧前端</td>
+      <td>点击后仍秒出本地和声</td>
+      <td>重建前端并修复部署脚本</td>
+    </tr>
+    <tr>
+      <td>后端挂在 SSH 会话</td>
+      <td>服务不稳定、难排查</td>
+      <td>切到 systemd</td>
+    </tr>
+    <tr>
+      <td>torch_extensions 残留锁</td>
+      <td>推理阶段卡住</td>
+      <td>清理缓存和残留状态</td>
+    </tr>
+    <tr>
+      <td>prefix_tokens 维度错误</td>
+      <td>Dimension out of range</td>
+      <td><code>input_ids</code> 改为 <code>input_ids.unsqueeze(0)</code></td>
+    </tr>
+    <tr>
+      <td>token 编码方式不匹配</td>
+      <td>空结果或无意义结果</td>
+      <td>改成真实 REMIGEN 编解码</td>
+    </tr>
+    <tr>
+      <td>和声只生成一个声部</td>
+      <td>返回结果过稀</td>
+      <td>增加 step 级候选音高后处理</td>
+    </tr>
+    <tr>
+      <td>和声撞主旋律</td>
+      <td>与用户音同 pitch</td>
+      <td>加入 used_pitches、去重和声部分配规则</td>
+    </tr>
+  </tbody>
+</table>
+
+<h1>8. 音乐性调试方法</h1>
+<h2>8.1 为什么必须做后处理</h2>
+<p>Museformer 的原始输出并不是可直接展示给用户的 SATB 四部和声，而更像是一组“候选音高材料”。因此必须在模型之后加一层规则，把这些材料重组为可试听、可视化、可控的声部。</p>
+
+<h2>8.2 当前后处理逻辑</h2>
+<ul>
+  <li>按 step 收集候选音高</li>
+  <li>每一步强制尝试补出 <code>alto / tenor / bass</code></li>
+  <li>先占住用户主旋律，避免同 pitch 冲突</li>
+  <li>加入每个声部相对主旋律的目标区间</li>
+  <li>加入前一步同声部音高，减小大跳</li>
+  <li>加入每个声部的可视音域范围</li>
+  <li>优先使用音域内候选，再使用音域内兜底，最后才允许极端值</li>
+</ul>
+
+<h2>8.3 本轮调试后的效果</h2>
+<ul>
+  <li>从“经常只有一个声部”提升到“稳定生成三层”</li>
+  <li>与主旋律同音的冲突明显减少</li>
+  <li><code>alto</code> 跳到 <code>pitch 0</code> 一类极端落点已被压下去</li>
+</ul>
+
+<h2>8.4 仍然存在的音乐性问题</h2>
+<ul>
+  <li><code>bass</code> 仍然偏保守，容易重复同一落点</li>
+  <li><code>alto / tenor</code> 还不够像真实“和声进行”</li>
+  <li>终止感、张力释放、功能和声意识还没有被显式控制</li>
+</ul>
+
+<h1>9. 当前关键文件</h1>
+<table>
+  <thead>
+    <tr>
+      <th background-color="light-gray">文件</th>
+      <th background-color="light-gray">作用</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><code>src/App.tsx</code></td><td>前端 UI、录音、AI 请求、回放逻辑</td></tr>
+    <tr><td><code>server/museformer_api.py</code></td><td>FastAPI、Museformer 推理、和声后处理</td></tr>
+    <tr><td><code>deploy_pem.exp</code></td><td>前端部署到 118.195.252.229</td></tr>
+    <tr><td><code>README.md</code></td><td>项目对外说明</td></tr>
+  </tbody>
+</table>
+
+<h1>10. 本轮 GitHub 关键提交</h1>
+<ul>
+  <li><code>8a3c486</code> Integrate AI harmony backend and multi-voice playback</li>
+  <li><code>6efbd86</code> Refresh homepage and repository descriptions</li>
+  <li><code>6f9a1a9</code> Improve harmony quality and error feedback</li>
+  <li><code>e49eb1b</code> Tune Museformer harmony voice allocation</li>
+</ul>
+
+<h1>11. 当前结论与下一步</h1>
+<callout emoji="✅" background-color="light-green" border-color="green">
+  <p>这版已经完成了从“看起来像 AI”到“前后端真实接通 Museformer”的关键跨越。现在已经具备真实线上前端、真实模型服务器、真实推理、真实四声部试听，以及初步可控的和声后处理。</p>
+</callout>
+<p>下一轮建议继续做五件事：</p>
+<ol>
+  <li seq="auto">给 <code>bass</code> 增加更明确的进行规则，减少静态重复</li>
+  <li seq="auto">给 <code>alto / tenor</code> 增加反向进行、邻接进行和终止偏好</li>
+  <li seq="auto">加入节拍强弱意识，在强拍更偏向稳定音</li>
+  <li seq="auto">对短旋律和长旋律分开调参</li>
+  <li seq="auto">给线上站点补 HTTPS，彻底恢复录音能力</li>
+</ol>
