@@ -1,0 +1,14 @@
+#!/usr/bin/expect -f
+set timeout 30
+set ip "118.195.252.229"
+set user "ubuntu"
+set domain "lingfun.fun"
+
+spawn ssh -i TRAE.pem -o StrictHostKeyChecking=no $user@$ip
+expect "*$*"
+send "sudo sed -i 's/server_name _;/server_name $domain www.$domain;/' /etc/nginx/sites-available/default\r"
+expect "*$*"
+send "sudo systemctl reload nginx\r"
+expect "*$*"
+send "exit\r"
+expect eof

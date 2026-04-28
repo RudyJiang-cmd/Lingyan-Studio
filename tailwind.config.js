@@ -9,7 +9,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        serif: ['"Playfair Display"', 'serif'],
+        serif: ['Georgia', 'serif'],
+        sans: ['Georgia', 'sans-serif'],
       },
       keyframes: {
         shimmer: {

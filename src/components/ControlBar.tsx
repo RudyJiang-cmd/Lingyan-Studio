@@ -79,7 +79,7 @@ const ControlBar: React.FC<ControlBarProps> = ({
       
       <div className="h-8 w-px bg-[#EFEBE1] mx-2" />
       
-      <div className="flex items-center gap-4 text-sm font-sans">
+      <div className="flex items-center gap-4 text-sm" style={{ fontFamily: 'Georgia, serif' }}>
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded-full bg-[#2D1B15] shadow-sm" />
           <span className="text-[#5D4037]">主旋律 / 女高</span>

@@ -23,7 +23,7 @@ const TransportBar: React.FC<TransportBarProps> = ({ mode, totalSteps, activeSte
   return (
     <div className="w-full max-w-6xl">
       <div className="flex items-center gap-4 bg-white/60 backdrop-blur-sm px-5 py-3 rounded-2xl border border-[#EFEBE1]">
-        <div className="text-sm font-sans text-[#5D4037] min-w-[56px]">{label}</div>
+        <div className="text-sm text-[#5D4037] min-w-[56px]" style={{ fontFamily: 'Georgia, serif' }}>{label}</div>
 
         <div className="flex items-center gap-1.5">
           {Array.from({ length: 4 }).map((_, i) => {
@@ -63,7 +63,7 @@ const TransportBar: React.FC<TransportBarProps> = ({ mode, totalSteps, activeSte
           })}
         </div>
 
-        <div className="text-xs font-sans text-[#8D6E63] min-w-[120px] text-right">
+        <div className="text-xs text-[#8D6E63] min-w-[120px] text-right" style={{ fontFamily: 'Georgia, serif' }}>
           {mode === 'recording' ? detectText : ''}
         </div>
       </div>

@@ -25,10 +25,10 @@ const NOTE_HEAD_HEIGHT = 16;
 const NOTE_CONTAINER_WIDTH = 52;
 const NOTE_CONTAINER_HEIGHT = 74;
 const STEM_HEIGHT = 40;
-const SCORE_LEFT_PAD = 140;
+const SCORE_LEFT_PAD = 148;
 const SCORE_RIGHT_PAD = 28;
-const CLEF_X = 10;
-const TIME_SIGNATURE_X = 78;
+const CLEF_X = 8;
+const TIME_SIGNATURE_X = 86;
 const FIRST_MEASURE_X = SCORE_LEFT_PAD;
 const MIDDLE_LINE_PITCH = 8;
 
@@ -134,7 +134,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
       <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-[#D7CCC8] rounded-br-3xl m-3" />
 
       <div 
-        className="relative select-none touch-none bg-[#FDFBF7] rounded-xl pl-16 pr-4 pt-4 pb-4"
+        className="relative select-none touch-none bg-[#FDFBF7] rounded-xl pt-4 pb-4 pl-8 flex justify-center"
       >
         <div className="relative" style={{ width: scoreWidth, height: scoreHeight }}>
         {ledgerLines.map((l) => (
@@ -154,75 +154,107 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
         {STAFF_LINES.map((pitch) => (
           <div
             key={`staff-line-${pitch}`}
-            className="absolute left-0 w-full border-t-[2px] border-[#2D1B15] pointer-events-none"
-            style={{ top: pitch * CELL_HEIGHT + CELL_HEIGHT / 2 - 1, width: scoreWidth }}
+            className="absolute left-0 border-t-[2px] border-[#2D1B15] pointer-events-none"
+            style={{ 
+              top: pitch * CELL_HEIGHT + CELL_HEIGHT / 2 - 1, 
+              width: FIRST_MEASURE_X + totalSteps * CELL_WIDTH 
+            }}
           />
         ))}
 
         <div
-          className="absolute pointer-events-none z-10"
+          className="absolute pointer-events-none z-10 flex items-center justify-center"
           style={{
             left: CLEF_X,
-            top: staffTop - 32,
-            width: 56,
-            height: staffHeight + 48,
+            top: staffTop - 12,
+            width: 52,
+            height: staffHeight,
             color: '#2D1B15',
           }}
         >
           <span
             className="select-none"
             style={{
-              fontSize: 108,
+              fontSize: 102,
               lineHeight: '1',
-              fontFamily: '"Noto Music","Playfair Display",serif',
+              fontFamily: '"Noto Music", Georgia, serif',
               opacity: 0.96,
+              transform: 'translateY(-12px)'
             }}
           >
             𝄞
           </span>
         </div>
 
-        <div
-          className="absolute pointer-events-none z-10 flex flex-col items-center justify-center"
+        <span
+          className="absolute pointer-events-none z-10 select-none flex items-center justify-center"
           style={{
             left: TIME_SIGNATURE_X,
-            top: staffTop - 10,
-            width: 42,
-            height: staffHeight + 20,
+            top: staffTop + 17.6,
+            width: 40,
+            height: 32,
             color: '#2D1B15',
-            fontFamily: '"Iowan Old Style","Times New Roman",serif',
+            fontSize: 90,
+            lineHeight: '1',
+            fontFamily: '"Baskerville","Times New Roman",serif',
             fontWeight: 700,
+            textAlign: 'center',
+            transform: 'scaleX(0.8) scaleY(1.05)',
+            transformOrigin: 'center',
           }}
         >
-          <span style={{ fontSize: 46, lineHeight: '0.82' }}>4</span>
-          <span style={{ fontSize: 46, lineHeight: '0.82' }}>4</span>
-        </div>
+          4
+        </span>
 
-        {Array.from({ length: totalSteps / 4 + 1 }).map((_, i) => (
-          <div
-            key={`bar-${i}`}
-            className="absolute border-l-[2px] border-[#2D1B15] pointer-events-none z-10"
-            style={{ 
-              left: FIRST_MEASURE_X + i * 4 * CELL_WIDTH,
-              top: staffTop,
-              height: staffHeight,
-            }}
-          />
-        ))}
+        <span
+          className="absolute pointer-events-none z-10 select-none flex items-center justify-center"
+          style={{
+            left: TIME_SIGNATURE_X,
+            top: staffTop + 83,
+            width: 40,
+            height: 32,
+            color: '#2D1B15',
+            fontSize: 90,
+            lineHeight: '1',
+            fontFamily: '"Baskerville","Times New Roman",serif',
+            fontWeight: 700,
+            textAlign: 'center',
+            transform: 'scaleX(0.8) scaleY(1.05)',
+            transformOrigin: 'center',
+          }}
+        >
+          4
+        </span>
+
+        {Array.from({ length: totalSteps / 4 + 1 }).map((_, i) => {
+          if (i === 0) return null;
+          if (i * 4 >= totalSteps) return null;
+          return (
+            <div
+              key={`bar-${i}`}
+              className="absolute border-l-[2px] border-[#2D1B15] pointer-events-none z-10"
+              style={{ 
+                left: FIRST_MEASURE_X + i * 4 * CELL_WIDTH,
+                top: staffTop,
+                height: staffHeight,
+              }}
+            />
+          );
+        })}
 
         <div
-          className="absolute pointer-events-none z-10"
+          className="absolute pointer-events-none z-10 border-l-[2px] border-r-[7px] border-[#2D1B15] flex"
           style={{
-            left: scoreWidth - 8,
+            left: FIRST_MEASURE_X + totalSteps * CELL_WIDTH - 2,
             top: staffTop,
-            width: 4,
             height: staffHeight,
-            backgroundColor: '#2D1B15',
+            width: 12,
           }}
         />
 
         {Array.from({ length: totalSteps + 1 }).map((_, i) => {
           if (i % 4 === 0) return null;
+          if (i >= totalSteps) return null;
           return (
             <div
               key={`v-${i}`}
@@ -246,6 +278,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
 
         <div 
           className="absolute inset-0 z-10 cursor-crosshair touch-none"
+          style={{ fontFamily: 'Georgia, serif' }}
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId);
             const rect = e.currentTarget.getBoundingClientRect();
@@ -371,7 +404,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
                   top: '50%',
                   transform: 'translateY(-58%)',
                   fontSize: 24,
-                  fontFamily: '"Times New Roman",serif',
+                  fontFamily: 'Georgia, serif',
                   opacity: 0.3,
                 }}
               >
@@ -437,7 +470,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
                     top: '50%',
                     transform: 'translateY(-58%)',
                     fontSize: 24,
-                    fontFamily: '"Times New Roman",serif',
+                    fontFamily: 'Georgia, serif',
                   }}
                 >
                   ♯
