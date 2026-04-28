@@ -2,6 +2,7 @@ import os
 import random
 import sys
 from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple
 
 import miditoolkit
 import torch
@@ -56,6 +57,12 @@ TICKS_PER_BEAT = 480
 TICKS_PER_STEP = TICKS_PER_BEAT // 4
 POS_PER_STEP = 3
 GENERATED_VOICES = ("alto", "tenor", "bass")
+ALLOWED_PITCHES = (0, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14)
+VOICE_TARGET_OFFSETS = {
+    "alto": 2,
+    "tenor": 5,
+    "bass": 8,
+}
 
 PITCH_TO_MIDI = {
     14: 60,
@@ -79,7 +86,8 @@ PITCH_TO_MIDI = {
 def midi_to_pitch_index(midi_pitch: int) -> int:
     best_pitch_index = 14
     best_diff = float("inf")
-    for pitch_index, candidate_midi in PITCH_TO_MIDI.items():
+    for pitch_index in ALLOWED_PITCHES:
+        candidate_midi = PITCH_TO_MIDI[pitch_index]
         diff = abs(midi_pitch - candidate_midi)
         if diff < best_diff:
             best_diff = diff
@@ -122,9 +130,39 @@ def build_prompt_token_strs(melody_json):
     return midi_encoder.convert_token_lists_to_token_str_lists(token_lists)[0]
 
 
-def decode_generated_notes(token_strs, prompt_token_count: int):
+def clamp_to_allowed_pitch(target_pitch: int) -> Optional[int]:
+    for allowed_pitch in ALLOWED_PITCHES:
+        if allowed_pitch >= target_pitch:
+            return allowed_pitch
+    return None
+
+
+def nearest_unused_pitch(
+    target_pitch: int,
+    used_pitches: Set[int],
+    user_pitch: Optional[int],
+) -> Optional[int]:
+    ranked_pitches = sorted(
+        ALLOWED_PITCHES,
+        key=lambda pitch: (
+            pitch in used_pitches,
+            user_pitch is not None and pitch == user_pitch,
+            abs(pitch - target_pitch),
+            pitch,
+        ),
+    )
+    for pitch in ranked_pitches:
+        if pitch in used_pitches:
+            continue
+        if user_pitch is not None and pitch == user_pitch:
+            continue
+        return pitch
+    return None
+
+
+def parse_generated_pitch_candidates(token_strs, prompt_token_count: int):
     generated_token_strs = token_strs[prompt_token_count:]
-    inst_notes = {}
+    step_candidates = {}
     current_inst = 0
     current_offset = None
     collected_any = False
@@ -156,28 +194,72 @@ def decode_generated_notes(token_strs, prompt_token_count: int):
         if token_type != "p" or current_offset is None:
             continue
 
-        inst_notes.setdefault(current_inst, []).append((current_offset, value))
+        step = max(0, min(TOTAL_STEPS - 1, int(round(current_offset / POS_PER_STEP))))
+        step_candidates.setdefault(step, []).append((value, current_inst))
         collected_any = True
 
-    if not inst_notes:
+    return step_candidates
+
+
+def get_step_candidate_pitches(
+    step: int,
+    step_candidates: Dict[int, List[Tuple[int, int]]],
+):
+    for radius in range(0, 3):
+        for candidate_step in (step - radius, step + radius):
+            if candidate_step not in step_candidates:
+                continue
+            candidate_pitches = []
+            seen = set()
+            for midi_pitch, _inst_id in step_candidates[candidate_step]:
+                pitch_index = midi_to_pitch_index(midi_pitch)
+                if pitch_index in seen:
+                    continue
+                seen.add(pitch_index)
+                candidate_pitches.append(pitch_index)
+            if candidate_pitches:
+                return candidate_pitches
+    return []
+
+
+def arrange_harmony_notes(user_melody, step_candidates):
+    if not user_melody:
         return []
 
     generated_notes = []
-    seen_notes = set()
-    for inst_index, inst_id in enumerate(sorted(inst_notes)):
-        voice = GENERATED_VOICES[min(inst_index, len(GENERATED_VOICES) - 1)]
-        for offset, midi_pitch in sorted(inst_notes[inst_id], key=lambda item: (item[0], item[1])):
-            step = max(0, min(TOTAL_STEPS - 1, int(round(offset / POS_PER_STEP))))
-            pitch_index = midi_to_pitch_index(midi_pitch)
-            note_key = (voice, step, pitch_index)
-            if note_key in seen_notes:
+    for note in sorted(user_melody, key=lambda item: item.get("step", 0)):
+        step = max(0, min(TOTAL_STEPS - 1, int(round(note.get("step", 0)))))
+        user_pitch = int(round(note.get("pitch", 14)))
+        candidate_pitches = [
+            pitch for pitch in get_step_candidate_pitches(step, step_candidates)
+            if pitch != user_pitch
+        ]
+        used_pitches = {user_pitch}
+
+        for voice in GENERATED_VOICES:
+            target_pitch = clamp_to_allowed_pitch(user_pitch + VOICE_TARGET_OFFSETS[voice])
+            if target_pitch is None:
+                target_pitch = user_pitch
+
+            available_candidates = [pitch for pitch in candidate_pitches if pitch not in used_pitches]
+            chosen_pitch = None
+            if available_candidates:
+                preferred_candidates = [pitch for pitch in available_candidates if pitch > user_pitch]
+                pool = preferred_candidates or available_candidates
+                chosen_pitch = min(pool, key=lambda pitch: abs(pitch - target_pitch))
+
+            if chosen_pitch is None:
+                chosen_pitch = nearest_unused_pitch(target_pitch, used_pitches, user_pitch)
+
+            if chosen_pitch is None or chosen_pitch == user_pitch:
                 continue
-            seen_notes.add(note_key)
+
+            used_pitches.add(chosen_pitch)
             generated_notes.append(
                 {
-                    "id": f"ai_{voice}_{step}_{pitch_index}_{random.randint(1000, 9999)}",
+                    "id": f"ai_{voice}_{step}_{chosen_pitch}_{random.randint(1000, 9999)}",
                     "step": step,
-                    "pitch": pitch_index,
+                    "pitch": chosen_pitch,
                     "voice": voice,
                 }
             )
@@ -270,7 +352,8 @@ async def generate_music(request: MelodyRequest):
 
         generated_ids = results[0][0]["tokens"]
         generated_token_strs = dictionary.string(generated_ids).split()
-        generated_notes = decode_generated_notes(generated_token_strs, len(prompt_token_strs))
+        step_candidates = parse_generated_pitch_candidates(generated_token_strs, len(prompt_token_strs))
+        generated_notes = arrange_harmony_notes(request.melody, step_candidates)
         print(f"GPU 推理成功，返回 {len(generated_notes)} 个音符。")
         return {"status": "success", "generated_notes": generated_notes}
     except Exception as exc:

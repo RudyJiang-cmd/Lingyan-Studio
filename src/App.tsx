@@ -11,6 +11,8 @@ const TOTAL_PITCHES = 15;
 const PLAY_BPM = 200;
 const RECORD_BPM = 100;
 const RECORD_OCTAVE_SHIFT = 12;
+const AI_API_URL = 'http://43.129.229.99:8000/generate';
+const AI_REQUEST_TIMEOUT_MS = 15000;
 
 const PITCH_TO_MIDI: Record<number, number> = {
   14: 60, // C4
@@ -285,6 +287,51 @@ const scheduleNotePlayback = (
   osc.stop(noteEndTime);
 };
 
+const formatAiErrorMessage = (error: unknown) => {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return 'AI 服务器响应超时（15 秒）。可能是后端正在重启，或当前推理耗时过长。';
+  }
+
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (message !== '') {
+      return `AI 生成失败：${message}`;
+    }
+  }
+
+  return 'AI 服务器连接失败。可能原因包括后端未启动、网络不可达，或浏览器当前无法访问 AI 接口。';
+};
+
+const formatRecordErrorMessage = (error: unknown) => {
+  if (!window.isSecureContext) {
+    return '当前页面不是安全上下文，浏览器会禁用麦克风。录音功能需要 HTTPS，或在 localhost 下访问。';
+  }
+
+  if (error instanceof DOMException) {
+    switch (error.name) {
+      case 'NotAllowedError':
+      case 'PermissionDeniedError':
+        return '浏览器没有拿到麦克风权限。请在地址栏或系统设置里允许当前页面访问麦克风。';
+      case 'NotFoundError':
+      case 'DevicesNotFoundError':
+        return '没有检测到可用的麦克风设备。请确认麦克风已连接并可被系统识别。';
+      case 'NotReadableError':
+      case 'TrackStartError':
+        return '麦克风当前被其他应用占用，或系统暂时无法读取音频输入。';
+      case 'SecurityError':
+        return '浏览器安全策略阻止了录音。通常需要 HTTPS 环境和麦克风权限。';
+      default:
+        return `录音启动失败：${error.message || error.name}`;
+    }
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return '当前浏览器环境不支持麦克风录音，或页面不是 HTTPS / localhost。';
+  }
+
+  return '录音启动失败。请检查麦克风权限、浏览器安全设置，以及是否通过 HTTPS 访问页面。';
+};
+
 function App() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -435,10 +482,16 @@ function App() {
     }
     if (isPlaying) stopPlayback();
 
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert('当前浏览器环境不支持麦克风录音，或页面不是 HTTPS / localhost。');
+      return;
+    }
+
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
+    } catch (error) {
+      alert(formatRecordErrorMessage(error));
       return;
     }
 
@@ -677,39 +730,59 @@ function App() {
 
     // 2. 将用户绘制的旋律打包准备发送给 AI 服务器
     const userNotes = snappedNotes.filter((n) => n.voice === 'user');
+    if (userNotes.length === 0) {
+      setIsGenerating(false);
+      alert('请先输入或录入主旋律，再生成和声。');
+      return;
+    }
+
     const melodyPayload = userNotes.map(n => ({
       step: n.step,
       pitch: n.pitch
     }));
 
     try {
-      // 3. 向我们刚刚搭建的腾讯云 GPU 服务器发起真实请求
-      const response = await fetch('http://43.129.229.99:8000/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ melody: melodyPayload })
-      });
-
-      if (!response.ok) {
-        throw new Error(`服务器响应错误: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log("AI 大脑返回的原始配器数据:", data);
-
-      if (data.status === "success" && data.generated_notes) {
-        // 使用 AI 服务器返回的真实音符数据
-        setNotes((prev) => {
-          const currentUserNotes = prev.filter((n) => n.voice === 'user');
-          return [...currentUserNotes, ...data.generated_notes];
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
+      try {
+        // 3. 向我们刚刚搭建的腾讯云 GPU 服务器发起真实请求
+        const response = await fetch(AI_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ melody: melodyPayload }),
+          signal: controller.signal
         });
-      } else {
-        throw new Error("API 返回格式不正确");
+
+        if (!response.ok) {
+          let detail = '';
+          try {
+            const errorData = await response.json();
+            detail = typeof errorData?.detail === 'string' ? errorData.detail : JSON.stringify(errorData);
+          } catch {
+            detail = response.statusText;
+          }
+          throw new Error(`服务器返回 ${response.status}${detail ? `，${detail}` : ''}`);
+        }
+
+        const data = await response.json();
+        console.log("AI 大脑返回的原始配器数据:", data);
+
+        if (data.status === "success" && data.generated_notes) {
+          // 使用 AI 服务器返回的真实音符数据
+          setNotes((prev) => {
+            const currentUserNotes = prev.filter((n) => n.voice === 'user');
+            return [...currentUserNotes, ...data.generated_notes];
+          });
+        } else {
+          throw new Error("API 返回格式不正确");
+        }
+      } finally {
+        window.clearTimeout(timeoutId);
       }
 
     } catch (error) {
       console.error("AI 音乐生成失败:", error);
-      alert("无法连接到 AI 服务器，请稍后再试或检查服务器状态。");
+      alert(formatAiErrorMessage(error));
     } finally {
       setIsGenerating(false);
     }
