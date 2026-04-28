@@ -3,6 +3,7 @@ set timeout 300
 set ip [lindex $argv 0]
 set password [lindex $argv 1]
 set user [lindex $argv 2]
+set deploy_dir "/home/$user/deploy-[clock format [clock seconds] -format %Y%m%d-%H%M%S]"
 
 # 1. 上传打包文件
 spawn scp -i TRAE.pem -o StrictHostKeyChecking=no dist.tar.gz $user@$ip:/home/$user/
@@ -15,11 +16,11 @@ expect {
 spawn ssh -i TRAE.pem -o StrictHostKeyChecking=no $user@$ip
 expect {
     "*assword:*" { send "$password\r"; exp_continue }
-    "*$*" { send "mkdir -p /home/ubuntu/dist && tar -xzf /home/ubuntu/dist.tar.gz -C /home/ubuntu/dist/\r" }
+    "*$*" { send "mkdir -p $deploy_dir && tar -xzf /home/$user/dist.tar.gz -C $deploy_dir\r" }
 }
 
 expect "*$*"
-send "sudo cp -r /home/ubuntu/dist/* /var/www/html/\r"
+send "sudo cp -r $deploy_dir/dist/* /var/www/html/\r"
 
 expect "*$*"
 send "sudo chown -R www-data:www-data /var/www/html/\r"

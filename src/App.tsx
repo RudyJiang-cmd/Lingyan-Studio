@@ -30,6 +30,48 @@ const PITCH_TO_MIDI: Record<number, number> = {
   0: 84   // C6
 };
 
+const VOICE_SYNTHS: Record<Voice, {
+  type: OscillatorType;
+  gain: number;
+  attack: number;
+  release: number;
+  transpose: number;
+  pan: number;
+}> = {
+  user: {
+    type: 'triangle',
+    gain: 0.22,
+    attack: 0.02,
+    release: 0.08,
+    transpose: -12,
+    pan: -0.15,
+  },
+  alto: {
+    type: 'sine',
+    gain: 0.16,
+    attack: 0.03,
+    release: 0.1,
+    transpose: 0,
+    pan: -0.35,
+  },
+  tenor: {
+    type: 'square',
+    gain: 0.12,
+    attack: 0.015,
+    release: 0.08,
+    transpose: -12,
+    pan: 0.2,
+  },
+  bass: {
+    type: 'sawtooth',
+    gain: 0.08,
+    attack: 0.01,
+    release: 0.12,
+    transpose: -24,
+    pan: 0.4,
+  },
+};
+
 // 定义敦煌/雅乐音阶对应的相对音阶度数（0=Do, 1=Re, 2=Mi, 3=Fa#, 4=Sol, 5=La）
 // 在 C 大调下，相当于 C, D, E, F#, G, A
 // 五线谱上，我们的 pitch 是从上往下数的线和间。
@@ -200,6 +242,49 @@ const getSnappedNotes = (currentNotes: Note[]): Note[] => {
   return [...otherNotes, ...snappedUserNotes];
 };
 
+const scheduleNotePlayback = (
+  ctx: AudioContext,
+  note: Note,
+  noteStartTime: number,
+  stepDuration: number
+) => {
+  const midi = PITCH_TO_MIDI[Math.round(note.pitch)];
+  if (midi === undefined) return;
+
+  const synth = VOICE_SYNTHS[note.voice];
+  const transposedMidi = midi + synth.transpose;
+  const freq = 440 * Math.pow(2, (transposedMidi - 69) / 12);
+  const noteEndTime = noteStartTime + stepDuration;
+
+  const osc = ctx.createOscillator();
+  const gainNode = ctx.createGain();
+  const outputNode =
+    typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+
+  osc.type = synth.type;
+  osc.frequency.setValueAtTime(freq, noteStartTime);
+
+  gainNode.gain.setValueAtTime(0, noteStartTime);
+  gainNode.gain.linearRampToValueAtTime(synth.gain, noteStartTime + synth.attack);
+  gainNode.gain.setValueAtTime(
+    synth.gain,
+    Math.max(noteStartTime + synth.attack, noteEndTime - synth.release)
+  );
+  gainNode.gain.linearRampToValueAtTime(0, noteEndTime);
+
+  osc.connect(gainNode);
+  if (outputNode) {
+    outputNode.pan.setValueAtTime(synth.pan, noteStartTime);
+    gainNode.connect(outputNode);
+    outputNode.connect(ctx.destination);
+  } else {
+    gainNode.connect(ctx.destination);
+  }
+
+  osc.start(noteStartTime);
+  osc.stop(noteEndTime);
+};
+
 function App() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -315,40 +400,16 @@ function App() {
       }
       const ctx = new AudioContextClass();
       audioCtxRef.current = ctx;
-
-      const userNotes = snappedNotes.filter((n) => n.voice === 'user');
+      void ctx.resume();
 
       const stepDuration = 60 / PLAY_BPM;
       const startTime = ctx.currentTime + 0.1;
       playStartRef.current = startTime;
       playStepDurationRef.current = stepDuration;
 
-      userNotes.forEach((note) => {
-        const midi = PITCH_TO_MIDI[Math.round(note.pitch)];
-        if (midi !== undefined) {
-          const transposedMidi = midi - 12;
-          const freq = 440 * Math.pow(2, (transposedMidi - 69) / 12);
-          
-          const osc = ctx.createOscillator();
-          const gainNode = ctx.createGain();
-
-          osc.type = 'sine';
-          osc.frequency.value = freq;
-
-          const noteStartTime = startTime + Math.round(note.step) * stepDuration;
-          const noteEndTime = noteStartTime + stepDuration;
-
-          gainNode.gain.setValueAtTime(0, noteStartTime);
-          gainNode.gain.linearRampToValueAtTime(0.5, noteStartTime + 0.05);
-          gainNode.gain.setValueAtTime(0.5, noteEndTime - 0.1);
-          gainNode.gain.linearRampToValueAtTime(0, noteEndTime);
-
-          osc.connect(gainNode);
-          gainNode.connect(ctx.destination);
-
-          osc.start(noteStartTime);
-          osc.stop(noteEndTime);
-        }
+      snappedNotes.forEach((note) => {
+        const noteStartTime = startTime + Math.round(note.step) * stepDuration;
+        scheduleNotePlayback(ctx, note, noteStartTime, stepDuration);
       });
 
       const totalDuration = TOTAL_STEPS * stepDuration;
@@ -365,7 +426,7 @@ function App() {
       };
       tick();
     }, 300); // 300ms delay for animation
-  }, [isPlaying, notes, stopPlayback]);
+  }, [isCountingIn, isPlaying, isRecording, notes, stopPlayback]);
 
   const handleRecord = useCallback(async () => {
     if (isCountingIn || isRecording) {
@@ -605,7 +666,7 @@ function App() {
     setNotes([]);
   }, []);
 
-  const handleHarmonize = useCallback(() => {
+  const handleHarmonize = useCallback(async () => {
     if (isCountingIn || isRecording) return;
     if (isGenerating) return;
     setIsGenerating(true);
@@ -614,51 +675,44 @@ function App() {
     const snappedNotes = getSnappedNotes(notes);
     setNotes(snappedNotes);
 
-    // 2. 延迟执行生成和声逻辑，以便让吸附动画完成
-    setTimeout(() => {
-      setNotes((prev) => {
-        const userNotes = prev.filter((n) => n.voice === 'user');
-        const newNotes = [...userNotes];
+    // 2. 将用户绘制的旋律打包准备发送给 AI 服务器
+    const userNotes = snappedNotes.filter((n) => n.voice === 'user');
+    const melodyPayload = userNotes.map(n => ({
+      step: n.step,
+      pitch: n.pitch
+    }));
 
-        for (let step = 0; step < TOTAL_STEPS; step++) {
-          const userNotesAtStep = userNotes.filter((n) => n.step === step);
-          
-          if (userNotesAtStep.length > 0) {
-            const usedPitches = new Set(userNotesAtStep.map((n) => n.pitch));
-            
-            const voicesToGenerate: Voice[] = ['alto', 'tenor', 'bass'];
-            
-            voicesToGenerate.forEach((voice) => {
-              // 这里加入 40% 的概率，让这个声部在这个时间步留空
-              if (Math.random() < 0.4) return;
-
-              let randomPitch;
-              let attempts = 0;
-              do {
-                // 只从 ALLOWED_PITCHES 里随机选音
-                const randomIndex = Math.floor(Math.random() * ALLOWED_PITCHES.length);
-                randomPitch = ALLOWED_PITCHES[randomIndex];
-                attempts++;
-              } while (usedPitches.has(randomPitch) && attempts < 50);
-
-              usedPitches.add(randomPitch);
-
-              newNotes.push({
-                id: generateId(),
-                pitch: randomPitch,
-                step,
-                voice,
-              });
-            });
-          }
-        }
-        return newNotes;
+    try {
+      // 3. 向我们刚刚搭建的腾讯云 GPU 服务器发起真实请求
+      const response = await fetch('http://43.129.229.99:8000/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ melody: melodyPayload })
       });
 
-      setTimeout(() => {
-        setIsGenerating(false);
-      }, 1500);
-    }, 300); // 等待吸附动画完成
+      if (!response.ok) {
+        throw new Error(`服务器响应错误: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("AI 大脑返回的原始配器数据:", data);
+
+      if (data.status === "success" && data.generated_notes) {
+        // 使用 AI 服务器返回的真实音符数据
+        setNotes((prev) => {
+          const currentUserNotes = prev.filter((n) => n.voice === 'user');
+          return [...currentUserNotes, ...data.generated_notes];
+        });
+      } else {
+        throw new Error("API 返回格式不正确");
+      }
+
+    } catch (error) {
+      console.error("AI 音乐生成失败:", error);
+      alert("无法连接到 AI 服务器，请稍后再试或检查服务器状态。");
+    } finally {
+      setIsGenerating(false);
+    }
   }, [isCountingIn, isGenerating, isRecording, notes]);
 
   return (
@@ -667,7 +721,7 @@ function App() {
         <h1 className="text-4xl md:text-5xl font-bold mb-3 text-[#2D1B15] tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>
           灵岩谱曲台
         </h1>
-        <p className="text-[#5D4037] text-sm md:text-base leading-relaxed" style={{ fontFamily: 'Georgia, serif' }}>在下方五线谱上随意挥洒您的音符（黑色），点击“播放”或“生成和声”按钮，您的旋律将自动吸附至敦煌音阶（1-2-3-♯4-5-6）与节奏中，并在当前版本为您模拟编排多声部合唱（未来将接入 AI 音乐大模型）。</p>
+        <p className="text-[#5D4037] text-sm md:text-base leading-relaxed" style={{ fontFamily: 'Georgia, serif' }}>在下方五线谱上随意挥洒您的音符（黑色），点击“播放”或“生成和声”按钮，您的旋律将自动吸附至敦煌音阶（1-2-3-♯4-5-6）与节奏中，并由 AI 后端生成和声建议。</p>
       </header>
 
       <div className="w-full max-w-6xl flex-1 flex flex-col items-center gap-8">
