@@ -721,7 +721,7 @@ function App() {
         <h1 className="text-4xl md:text-5xl font-bold mb-3 text-[#2D1B15] tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>
           灵岩谱曲台
         </h1>
-        <p className="text-[#5D4037] text-sm md:text-base leading-relaxed" style={{ fontFamily: 'Georgia, serif' }}>在下方五线谱上随意挥洒您的音符（黑色），点击“播放”或“生成和声”按钮，您的旋律将自动吸附至敦煌音阶（1-2-3-♯4-5-6）与节奏中，并由 AI 后端生成和声建议。</p>
+        <p className="text-[#5D4037] text-sm md:text-base leading-relaxed" style={{ fontFamily: 'Georgia, serif' }}>在下方五线谱上绘制主旋律后，系统会将音符吸附到敦煌音阶（1-2-3-♯4-5-6）与节奏网格，并通过 AI 后端生成可直接试听的四声部和声建议。</p>
       </header>
 
       <div className="w-full max-w-6xl flex-1 flex flex-col items-center gap-8">
