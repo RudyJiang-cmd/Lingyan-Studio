@@ -6,7 +6,7 @@
 
 <grid>
   <column width-ratio="0.5">
-    <p><b>线上前端</b><br/>http://119.45.247.15</p>
+    <p><b>线上前端</b><br/>http://119.45.228.209</p>
   </column>
   <column width-ratio="0.5">
     <p><b>GitHub</b><br/>https://github.com/RudyJiang-cmd/Lingyan-Studio</p>
@@ -48,7 +48,7 @@
   <tbody>
     <tr>
       <td>前端静态站点</td>
-      <td>119.45.247.15</td>
+      <td>119.45.228.209</td>
       <td>Nginx 托管 Vite 构建产物</td>
     </tr>
     <tr>
@@ -61,15 +61,19 @@
       <td>RudyJiang-cmd/Lingyan-Studio</td>
       <td>前后端代码、部署脚本、文档</td>
     </tr>
-  </tbody>
+</tbody>
 </table>
+
+<callout emoji="📌" background-color="light-blue" border-color="blue">
+  <p>2026-04-30 迁移说明：前端静态站点已迁移到新的包年包月腾讯云服务器 <code>119.45.228.209</code>，用于后续 ICP 备案流程；旧服务器会在新站验证稳定并获得明确确认后再销毁。</p>
+</callout>
 
 <h1>3. 接入前的真实情况</h1>
 <callout emoji="⚠️" background-color="light-red" border-color="red">
   <p>一开始最大的误区不是“没有模型服务器”，而是“本地源码已经改了”被误认为“线上已经接入 AI”。</p>
 </callout>
 <ul>
-  <li>119.45.247.15 上只有 Nginx，对外下发的还是旧静态包。</li>
+  <li>119.45.228.209 上只有 Nginx，对外下发的还是旧静态包。</li>
   <li>旧包里仍然保留本地规则生成逻辑，没有真正打到 43.129.229.99。</li>
   <li>页面文案甚至还保留“未来将接入 AI 音乐大模型”。</li>
   <li>因此整个排查必须分成两条链：前端部署链路和模型服务链路。</li>
@@ -107,7 +111,7 @@
 </table>
 
 <h2>4.4 录音为什么在公网 IP 上失效</h2>
-<p>不是代码逻辑断了，而是浏览器安全策略。当前站点是 <code>http://119.45.247.15</code>，很多浏览器要求 <b>HTTPS 或 localhost</b> 才允许 <code>getUserMedia</code> 打开麦克风。现在前端已经会把这个原因直接告诉用户，但要彻底修复仍然需要 HTTPS。</p>
+<p>不是代码逻辑断了，而是浏览器安全策略。当前站点是 <code>http://119.45.228.209</code>，很多浏览器要求 <b>HTTPS 或 localhost</b> 才允许 <code>getUserMedia</code> 打开麦克风。现在前端已经会把这个原因直接告诉用户，但要彻底修复仍然需要 HTTPS。</p>
 
 <h1>5. 部署链路修复</h1>
 <p>核心文件是 <code>deploy_pem.exp</code>。这里踩到过一个很典型的“假部署”：</p>
@@ -224,7 +228,7 @@
   <tbody>
     <tr><td><code>src/App.tsx</code></td><td>前端 UI、录音、AI 请求、回放逻辑</td></tr>
     <tr><td><code>server/museformer_api.py</code></td><td>FastAPI、Museformer 推理、和声后处理</td></tr>
-    <tr><td><code>deploy_pem.exp</code></td><td>前端部署到 119.45.247.15</td></tr>
+    <tr><td><code>deploy_pem.exp</code></td><td>前端部署到 119.45.228.209</td></tr>
     <tr><td><code>README.md</code></td><td>项目对外说明</td></tr>
   </tbody>
 </table>
@@ -278,3 +282,22 @@
   <li>更长时值使用空心音头；全小节长度音符不显示符杆。</li>
   <li>音符 glyph 改为统一 SVG 小字形，避免音头和符杆分离。</li>
 </ul>
+
+<hr/>
+
+<h1>13. 2026-04-30 ICP 备案服务器迁移</h1>
+<callout emoji="📌" background-color="light-blue" border-color="blue">
+  <p>前端静态站点已迁移到新的包年包月腾讯云服务器，主要目的是为后续 ICP 备案提供稳定、合规的承载环境。</p>
+</callout>
+<table>
+  <thead>
+    <tr><th background-color="light-gray">项目</th><th background-color="light-gray">说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>新服务器</td><td><code>119.45.228.209</code></td></tr>
+    <tr><td>迁移原因</td><td>使用包年包月服务器承载前端站点，便于完成 ICP 备案。</td></tr>
+    <tr><td>部署结果</td><td>Nginx 已安装并托管当前前端构建产物。</td></tr>
+    <tr><td>迁移范围</td><td>仅前端 Nginx 静态站点；Museformer 模型后端仍保持当前独立 GPU/推理服务地址。</td></tr>
+    <tr><td>旧服务器处理</td><td>暂不销毁，等待新服务器部署验证通过并获得明确确认后再处理。</td></tr>
+  </tbody>
+</table>

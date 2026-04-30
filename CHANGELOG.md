@@ -8,4 +8,4 @@
 - Added duration-aware note glyphs: quarter notes use filled heads with stems, longer notes use open heads, and full-measure notes omit stems.
 - Preserved generated duration data through the AI request and Museformer backend prompt path.
 - Kept rests and sub-quarter durations out of the editing workflow to avoid confusing player input.
-- Updated the documented public preview host to `119.45.247.15`.
+- Migrated the documented public preview host to `119.45.228.209`, a monthly/yearly Tencent Cloud server prepared for ICP filing.

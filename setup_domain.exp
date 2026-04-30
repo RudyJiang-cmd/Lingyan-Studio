@@ -1,6 +1,6 @@
 #!/usr/bin/expect -f
 set timeout 30
-set ip "119.45.247.15"
+set ip "119.45.228.209"
 set user "ubuntu"
 set domain "lingfun.fun"
 
