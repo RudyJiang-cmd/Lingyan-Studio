@@ -1,12 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Note, Voice } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
 
 type ScoreGridProps = {
   notes: Note[];
@@ -18,15 +12,14 @@ type ScoreGridProps = {
   mode?: 'idle' | 'countin' | 'recording' | 'playing';
 };
 
-const CELL_WIDTH = 48;
+const MAX_CELL_WIDTH = 48;
+const MIN_CELL_WIDTH = 28;
 const CELL_HEIGHT = 16;
-const NOTE_HEAD_WIDTH = 24;
-const NOTE_HEAD_HEIGHT = 16;
 const NOTE_CONTAINER_WIDTH = 52;
 const NOTE_CONTAINER_HEIGHT = 74;
 const STEM_HEIGHT = 40;
 const SCORE_LEFT_PAD = 148;
-const SCORE_RIGHT_PAD = 28;
+const SCORE_RIGHT_PAD = 44;
 const CLEF_X = 8;
 const TIME_SIGNATURE_X = 86;
 const FIRST_MEASURE_X = SCORE_LEFT_PAD;
@@ -46,32 +39,70 @@ const needsSharp = (pitch: number) => {
   return roundedPitch === 4 || roundedPitch === 11;
 };
 
-const getNoteCenterX = (step: number) => FIRST_MEASURE_X + step * CELL_WIDTH + CELL_WIDTH / 2;
+const getNoteCenterX = (step: number, cellWidth: number) => FIRST_MEASURE_X + step * cellWidth + cellWidth / 2;
 const getNoteCenterY = (pitch: number) => pitch * CELL_HEIGHT + CELL_HEIGHT / 2;
 
 const getStemDirection = (pitch: number) => (
   Math.round(pitch) <= MIDDLE_LINE_PITCH ? 'down' : 'up'
 );
 
-const getStemStyle = (pitch: number, color: string, opacity?: number) => {
-  const stemBase = {
-    width: 2,
-    height: STEM_HEIGHT,
-    backgroundColor: color,
-    opacity,
-  };
+const shouldUseOpenHead = (duration?: number) => (duration ?? 1) >= 2;
+const shouldShowStem = (duration?: number) => (duration ?? 1) < 4;
 
-  return getStemDirection(pitch) === 'up'
-    ? {
-        ...stemBase,
-        left: NOTE_CONTAINER_WIDTH / 2 + NOTE_HEAD_WIDTH / 2 - 4,
-        top: NOTE_CONTAINER_HEIGHT / 2 - STEM_HEIGHT + 3,
-      }
-    : {
-        ...stemBase,
-        left: NOTE_CONTAINER_WIDTH / 2 - NOTE_HEAD_WIDTH / 2 + 2,
-        top: NOTE_CONTAINER_HEIGHT / 2 - 1,
-      };
+const NoteGlyph = ({
+  pitch,
+  color,
+  duration,
+  opacity = 1,
+}: {
+  pitch: number;
+  color: string;
+  duration?: number;
+  opacity?: number;
+}) => {
+  const openHead = shouldUseOpenHead(duration);
+  const showStem = shouldShowStem(duration);
+  const stemDown = getStemDirection(pitch) === 'down';
+  const cx = NOTE_CONTAINER_WIDTH / 2;
+  const cy = NOTE_CONTAINER_HEIGHT / 2;
+  const rx = openHead && !showStem ? 12.5 : 11.5;
+  const ry = 6.9;
+  const stemX = stemDown ? cx - rx + 2.5 : cx + rx - 2.5;
+  const stemY1 = stemDown ? cy + 1 : cy - STEM_HEIGHT + 4;
+  const stemY2 = stemDown ? cy + STEM_HEIGHT - 3 : cy - 1;
+
+  return (
+    <svg
+      className="absolute inset-0 overflow-visible"
+      width={NOTE_CONTAINER_WIDTH}
+      height={NOTE_CONTAINER_HEIGHT}
+      viewBox={`0 0 ${NOTE_CONTAINER_WIDTH} ${NOTE_CONTAINER_HEIGHT}`}
+      style={{ opacity }}
+      aria-hidden="true"
+    >
+      <ellipse
+        cx={cx}
+        cy={cy}
+        rx={rx}
+        ry={ry}
+        fill={openHead ? '#FDFBF7' : color}
+        stroke={color}
+        strokeWidth={openHead ? 2.2 : 1.4}
+        transform={`rotate(-18 ${cx} ${cy})`}
+      />
+      {showStem && (
+        <line
+          x1={stemX}
+          x2={stemX}
+          y1={stemY1}
+          y2={stemY2}
+          stroke={color}
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
+      )}
+    </svg>
+  );
 };
 
 const ScoreGrid: React.FC<ScoreGridProps> = ({
@@ -83,23 +114,52 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
   activeStep = null,
   mode = 'idle',
 }) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [hoverPos, setHoverPos] = useState<{ step: number; pitch: number } | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawPath, setDrawPath] = useState<{step: number, pitch: number}[]>([]);
   const drawPathRef = useRef<{step: number, pitch: number}[]>([]);
+  const [cellWidth, setCellWidth] = useState(MAX_CELL_WIDTH);
 
   const getColor = (voice: Voice) => COLORS[voice];
-  const scoreWidth = FIRST_MEASURE_X + totalSteps * CELL_WIDTH + SCORE_RIGHT_PAD;
+  const scoreWidth = FIRST_MEASURE_X + totalSteps * cellWidth + SCORE_RIGHT_PAD;
   const scoreHeight = totalPitches * CELL_HEIGHT;
   const staffTop = STAFF_LINES[0] * CELL_HEIGHT + CELL_HEIGHT / 2 - 1;
   const staffHeight = (STAFF_LINES[STAFF_LINES.length - 1] - STAFF_LINES[0]) * CELL_HEIGHT + 2;
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateCellWidth = (width: number) => {
+      const chromeWidth = 48 + 32;
+      const availableScoreWidth = width - chromeWidth;
+      const nextCellWidth = Math.min(
+        MAX_CELL_WIDTH,
+        Math.max(MIN_CELL_WIDTH, (availableScoreWidth - SCORE_LEFT_PAD - SCORE_RIGHT_PAD) / totalSteps)
+      );
+      setCellWidth(nextCellWidth);
+    };
+
+    updateCellWidth(container.getBoundingClientRect().width);
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      updateCellWidth(entry.contentRect.width);
+    });
+    observer.observe(container);
+
+    return () => observer.disconnect();
+  }, [totalSteps]);
 
   const ledgerLines = notes.flatMap((note) => {
     // Render a ledger line (加线) that matches note color
     const color = getColor(note.voice);
     const lines: Array<{ key: string; left: number; top: number; color: string }> = [];
     const roundedPitch = Math.round(note.pitch);
-    const noteCenterX = getNoteCenterX(note.step);
+    const noteCenterX = getNoteCenterX(note.step, cellWidth);
 
     // Above the staff
     if (roundedPitch < STAFF_LINES[0]) {
@@ -127,7 +187,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
   });
 
   return (
-    <div className="relative p-6 bg-white/50 backdrop-blur-md rounded-3xl border border-[#EFEBE1] shadow-xl overflow-hidden">
+    <div ref={containerRef} className="relative p-6 bg-white/50 backdrop-blur-md rounded-3xl border border-[#EFEBE1] shadow-xl overflow-hidden">
       <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-[#D7CCC8] rounded-tl-3xl m-3" />
       <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-[#D7CCC8] rounded-tr-3xl m-3" />
       <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-[#D7CCC8] rounded-bl-3xl m-3" />
@@ -141,12 +201,12 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
           <div
             key={l.key}
             className="absolute pointer-events-none z-10"
-            style={{
-              left: l.left - CELL_WIDTH * 0.45,
-              top: l.top,
-              width: CELL_WIDTH * 0.9,
-              height: 2,
-              backgroundColor: l.color,
+              style={{
+                left: l.left - cellWidth * 0.45,
+                top: l.top,
+                width: cellWidth * 0.9,
+                height: 2,
+                backgroundColor: l.color,
             }}
           />
         ))}
@@ -154,10 +214,11 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
         {STAFF_LINES.map((pitch) => (
           <div
             key={`staff-line-${pitch}`}
-            className="absolute left-0 border-t-[2px] border-[#2D1B15] pointer-events-none"
+            className="absolute left-0 pointer-events-none"
             style={{ 
               top: pitch * CELL_HEIGHT + CELL_HEIGHT / 2 - 1, 
-              width: FIRST_MEASURE_X + totalSteps * CELL_WIDTH 
+              width: FIRST_MEASURE_X + totalSteps * cellWidth,
+              borderTop: '2px solid #2D1B15',
             }}
           />
         ))}
@@ -231,24 +292,36 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
           if (i * 4 >= totalSteps) return null;
           return (
             <div
-              key={`bar-${i}`}
-              className="absolute border-l-[2px] border-[#2D1B15] pointer-events-none z-10"
-              style={{ 
-                left: FIRST_MEASURE_X + i * 4 * CELL_WIDTH,
+                key={`bar-${i}`}
+                className="absolute pointer-events-none z-10"
+                style={{
+                left: FIRST_MEASURE_X + i * 4 * cellWidth,
                 top: staffTop,
                 height: staffHeight,
+                borderLeft: '2px solid #2D1B15',
               }}
             />
           );
         })}
 
         <div
-          className="absolute pointer-events-none z-10 border-l-[2px] border-r-[7px] border-[#2D1B15] flex"
+          className="absolute pointer-events-none z-10"
           style={{
-            left: FIRST_MEASURE_X + totalSteps * CELL_WIDTH - 2,
+            left: FIRST_MEASURE_X + totalSteps * cellWidth - 14,
             top: staffTop,
             height: staffHeight,
-            width: 12,
+            width: 2,
+            backgroundColor: '#2D1B15',
+          }}
+        />
+        <div
+          className="absolute pointer-events-none z-10"
+          style={{
+            left: FIRST_MEASURE_X + totalSteps * cellWidth - 7,
+            top: staffTop,
+            height: staffHeight,
+            width: 7,
+            backgroundColor: '#2D1B15',
           }}
         />
 
@@ -258,8 +331,11 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
           return (
             <div
               key={`v-${i}`}
-              className="absolute top-0 h-full pointer-events-none border-l border-[#D7CCC8]/40"
-              style={{ left: FIRST_MEASURE_X + i * CELL_WIDTH }}
+              className="absolute top-0 h-full pointer-events-none"
+              style={{
+                left: FIRST_MEASURE_X + i * cellWidth,
+                borderLeft: '1px solid rgba(215, 204, 200, 0.4)',
+              }}
             />
           );
         })}
@@ -268,7 +344,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
           <div
             className="absolute top-0 bottom-0 pointer-events-none z-10"
             style={{
-              left: FIRST_MEASURE_X + activeStep * CELL_WIDTH,
+              left: FIRST_MEASURE_X + activeStep * cellWidth,
               width: 2,
               backgroundColor: mode === 'playing' ? '#2D1B15' : '#C2410C',
               opacity: 0.35,
@@ -285,7 +361,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
             
-            const step = (x - FIRST_MEASURE_X) / CELL_WIDTH;
+            const step = (x - FIRST_MEASURE_X) / cellWidth;
             const pitch = y / CELL_HEIGHT;
             
             setIsDrawing(true);
@@ -297,7 +373,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
             const rect = e.currentTarget.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            const step = (x - FIRST_MEASURE_X) / CELL_WIDTH;
+            const step = (x - FIRST_MEASURE_X) / cellWidth;
             const pitch = y / CELL_HEIGHT;
             
             if (isDrawing) {
@@ -320,7 +396,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
               if (path.length > 0) {
                 const start = path[0];
                 const end = path[path.length - 1];
-                const dist = Math.hypot((end.step - start.step) * CELL_WIDTH, (end.pitch - start.pitch) * CELL_HEIGHT);
+                const dist = Math.hypot((end.step - start.step) * cellWidth, (end.pitch - start.pitch) * CELL_HEIGHT);
                 
                 if (dist < 10) {
                   onGridClick(start.pitch, start.step);
@@ -346,7 +422,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
         {drawPath.length > 0 && (
           <svg className="absolute inset-0 pointer-events-none z-30" style={{ width: scoreWidth, height: scoreHeight }}>
             <polyline
-              points={drawPath.map(p => `${FIRST_MEASURE_X + p.step * CELL_WIDTH},${p.pitch * CELL_HEIGHT}`).join(' ')}
+              points={drawPath.map(p => `${FIRST_MEASURE_X + p.step * cellWidth},${p.pitch * CELL_HEIGHT}`).join(' ')}
               fill="none"
               stroke={COLORS.user}
               strokeWidth="4"
@@ -361,7 +437,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
           <div
             className="absolute pointer-events-none z-10"
             style={{
-              left: getNoteCenterX(hoverPos.step) - NOTE_CONTAINER_WIDTH / 2,
+              left: getNoteCenterX(hoverPos.step, cellWidth) - NOTE_CONTAINER_WIDTH / 2,
               top: getNoteCenterY(hoverPos.pitch) - NOTE_CONTAINER_HEIGHT / 2,
               width: NOTE_CONTAINER_WIDTH,
               height: NOTE_CONTAINER_HEIGHT,
@@ -372,9 +448,9 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
                 key={`hover-ledger-above-${i}`}
                 className="absolute"
                 style={{
-                  left: NOTE_CONTAINER_WIDTH / 2 - CELL_WIDTH * 0.45,
+                  left: NOTE_CONTAINER_WIDTH / 2 - cellWidth * 0.45,
                   top: NOTE_CONTAINER_HEIGHT / 2 + (STAFF_LINES[0] - hoverPos.pitch - (i + 1) * 2) * CELL_HEIGHT - 1,
-                  width: CELL_WIDTH * 0.9,
+                  width: cellWidth * 0.9,
                   height: 2,
                   backgroundColor: COLORS.user,
                   opacity: 0.3,
@@ -386,9 +462,9 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
                 key={`hover-ledger-below-${i}`}
                 className="absolute"
                 style={{
-                  left: NOTE_CONTAINER_WIDTH / 2 - CELL_WIDTH * 0.45,
+                  left: NOTE_CONTAINER_WIDTH / 2 - cellWidth * 0.45,
                   top: NOTE_CONTAINER_HEIGHT / 2 - (hoverPos.pitch - STAFF_LINES[STAFF_LINES.length - 1] - (i + 1) * 2) * CELL_HEIGHT - 1,
-                  width: CELL_WIDTH * 0.9,
+                  width: cellWidth * 0.9,
                   height: 2,
                   backgroundColor: COLORS.user,
                   opacity: 0.3,
@@ -412,18 +488,10 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
               </span>
             )}
             <div
-              className="absolute left-1/2 top-1/2 rounded-full opacity-30"
-              style={{
-                width: NOTE_HEAD_WIDTH,
-                height: NOTE_HEAD_HEIGHT,
-                backgroundColor: COLORS.user,
-                transform: 'translate(-50%, -50%) rotate(-18deg)',
-              }}
-            />
-            <div
-              className="absolute opacity-30"
-              style={getStemStyle(hoverPos.pitch, COLORS.user, 0.3)}
-            />
+              className="absolute inset-0"
+            >
+              <NoteGlyph pitch={hoverPos.pitch} color={COLORS.user} duration={1} opacity={0.3} />
+            </div>
           </div>
         )}
 
@@ -435,7 +503,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
                 scale: 0.7,
                 opacity: 0,
                 y: -7,
-                left: getNoteCenterX(note.step) - NOTE_CONTAINER_WIDTH / 2,
+                left: getNoteCenterX(note.step, cellWidth) - NOTE_CONTAINER_WIDTH / 2,
                 top: getNoteCenterY(note.pitch) - NOTE_CONTAINER_HEIGHT / 2,
               }}
               animate={{ 
@@ -445,7 +513,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
                     : 1,
                 opacity: 1, 
                 y: 0,
-                left: getNoteCenterX(note.step) - NOTE_CONTAINER_WIDTH / 2,
+                left: getNoteCenterX(note.step, cellWidth) - NOTE_CONTAINER_WIDTH / 2,
                 top: getNoteCenterY(note.pitch) - NOTE_CONTAINER_HEIGHT / 2,
               }}
               exit={{ scale: 0, opacity: 0, transition: { duration: 0.15 } }}
@@ -476,20 +544,11 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
                   ♯
                 </span>
               )}
-              <div
-                className={cn("absolute rounded-full shadow-sm", note.voice === 'user' ? "opacity-95" : "opacity-90")}
-                style={{
-                  left: '50%',
-                  top: '50%',
-                  width: NOTE_HEAD_WIDTH,
-                  height: NOTE_HEAD_HEIGHT,
-                  backgroundColor: getColor(note.voice),
-                  transform: 'translate(-50%, -50%) rotate(-18deg)',
-                }}
-              />
-              <div
-                className="absolute"
-                style={getStemStyle(note.pitch, getColor(note.voice))}
+              <NoteGlyph
+                pitch={note.pitch}
+                color={getColor(note.voice)}
+                duration={note.duration}
+                opacity={note.voice === 'user' ? 0.96 : 0.88}
               />
             </motion.div>
           ))}

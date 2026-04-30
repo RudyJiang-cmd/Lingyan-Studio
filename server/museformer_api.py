@@ -54,8 +54,8 @@ class MelodyRequest(BaseModel):
 
 TOTAL_STEPS = 16
 TICKS_PER_BEAT = 480
-TICKS_PER_STEP = TICKS_PER_BEAT // 4
-POS_PER_STEP = 3
+TICKS_PER_STEP = TICKS_PER_BEAT
+POS_PER_STEP = 12
 GENERATED_VOICES = ("alto", "tenor", "bass")
 ALLOWED_PITCHES = (0, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14)
 VOICE_TARGET_INTERVALS = {
@@ -115,6 +115,7 @@ def build_prompt_token_strs(melody_json):
     inst = miditoolkit.Instrument(program=0, is_drum=False, name="user")
     for note in sorted(melody_json, key=lambda item: item.get("step", 0)):
         step = max(0, min(TOTAL_STEPS - 1, int(round(note.get("step", 0)))))
+        duration_steps = max(1, min(TOTAL_STEPS - step, int(round(note.get("duration", 1)))))
         pitch_index = int(round(note.get("pitch", 14)))
         midi_pitch = PITCH_TO_MIDI.get(pitch_index, 60)
         start = step * TICKS_PER_STEP
@@ -123,7 +124,7 @@ def build_prompt_token_strs(melody_json):
                 velocity=64,
                 pitch=midi_pitch,
                 start=start,
-                end=start + TICKS_PER_STEP,
+                end=start + duration_steps * TICKS_PER_STEP,
             )
         )
 
@@ -328,6 +329,7 @@ def arrange_harmony_notes(user_melody, step_candidates):
                     "id": f"ai_{voice}_{step}_{chosen_pitch}_{random.randint(1000, 9999)}",
                     "step": step,
                     "pitch": chosen_pitch,
+                    "duration": max(1, min(TOTAL_STEPS - step, int(round(note.get("duration", 1))))),
                     "voice": voice,
                 }
             )

@@ -2,12 +2,20 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import ScoreGrid from './components/ScoreGrid';
 import ControlBar from './components/ControlBar';
 import TransportBar, { type TransportMode } from './components/TransportBar';
-import { Note, Voice } from './types';
+import { Note, NoteDuration, Voice } from './types';
+
+type BrowserAudioContextConstructor = typeof AudioContext;
+
+type BrowserWindowWithWebkitAudio = Window & {
+  AudioContext?: BrowserAudioContextConstructor;
+  webkitAudioContext?: BrowserAudioContextConstructor;
+};
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 const TOTAL_STEPS = 16;
 const TOTAL_PITCHES = 15;
+const TICKS_PER_BEAT = 1;
 const PLAY_BPM = 200;
 const RECORD_BPM = 100;
 const RECORD_OCTAVE_SHIFT = 12;
@@ -104,7 +112,12 @@ const VOICE_SYNTHS: Record<Voice, {
 // 0: 1 (C)
 const ALLOWED_PITCHES = [0, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14];
 
-export const snapToDunhuangPitch = (rawPitch: number) => {
+const getAudioContextClass = (): BrowserAudioContextConstructor | undefined => {
+  const browserWindow = window as BrowserWindowWithWebkitAudio;
+  return browserWindow.AudioContext || browserWindow.webkitAudioContext;
+};
+
+const snapToDunhuangPitch = (rawPitch: number) => {
   const pitch = Math.round(rawPitch);
   if (ALLOWED_PITCHES.includes(pitch)) return pitch;
   
@@ -157,6 +170,74 @@ const pitchIndexToNoteName = (pitchIndex: number) => {
   const midi = PITCH_TO_MIDI[Math.round(pitchIndex)];
   if (midi === undefined) return '';
   return midiToNoteName(midi);
+};
+
+const getTickDuration = (bpm: number) => 60 / bpm / TICKS_PER_BEAT;
+
+const clampDuration = (duration: number, step: number): NoteDuration => {
+  const room = Math.max(1, TOTAL_STEPS - step);
+  return Math.max(1, Math.min(room, Math.round(duration || 1)));
+};
+
+const normalizeNote = (note: Note): Note => {
+  const step = Math.max(0, Math.min(TOTAL_STEPS - 1, Math.round(note.step)));
+  return {
+    ...note,
+    step,
+    pitch: snapToDunhuangPitch(Math.round(note.pitch)),
+    duration: clampDuration(note.duration ?? 1, step),
+  };
+};
+
+const buildNotesFromPitchTicks = (pitchTicks: Array<number | null>): Note[] => {
+  const notes: Note[] = [];
+  let step = 0;
+
+  while (step < TOTAL_STEPS) {
+    const pitch = pitchTicks[step];
+    if (pitch === null) {
+      step += 1;
+      continue;
+    }
+
+    let end = step + 1;
+    while (end < TOTAL_STEPS && pitchTicks[end] === pitch) {
+      end += 1;
+    }
+
+    notes.push({
+      id: generateId(),
+      pitch,
+      step,
+      duration: clampDuration(end - step, step),
+      voice: 'user',
+    });
+    step = end;
+  }
+
+  return notes;
+};
+
+const deriveSustainedNotes = (currentNotes: Note[]): Note[] => {
+  const userNotes = getSnappedNotes(currentNotes)
+    .filter((n) => n.voice === 'user')
+    .sort((a, b) => a.step - b.step);
+  const otherNotes = currentNotes.filter((n) => n.voice !== 'user').map(normalizeNote);
+
+  const sustainedUserNotes = userNotes.map((note, index) => {
+    const measureEnd = Math.floor(note.step / 4) * 4 + 4;
+    const nextNote = userNotes
+      .slice(index + 1)
+      .find((candidate) => candidate.step > note.step && candidate.step < measureEnd);
+    const endStep = nextNote ? nextNote.step : measureEnd;
+
+    return {
+      ...note,
+      duration: clampDuration(endStep - note.step, note.step),
+    };
+  });
+
+  return [...otherNotes, ...sustainedUserNotes];
 };
 
 const autoCorrelate = (buf: Float32Array, sampleRate: number) => {
@@ -218,7 +299,7 @@ const autoCorrelate = (buf: Float32Array, sampleRate: number) => {
 
 const getSnappedNotes = (currentNotes: Note[]): Note[] => {
   const userNotes = currentNotes.filter(n => n.voice === 'user');
-  const otherNotes = currentNotes.filter(n => n.voice !== 'user');
+  const otherNotes = currentNotes.filter(n => n.voice !== 'user').map(normalizeNote);
 
   const snappedUserNotes: Note[] = [];
   const usedSteps = new Set<number>();
@@ -226,18 +307,11 @@ const getSnappedNotes = (currentNotes: Note[]): Note[] => {
   const sortedUserNotes = [...userNotes].sort((a, b) => a.step - b.step);
 
   sortedUserNotes.forEach(n => {
-    let snappedStep = Math.round(n.step);
-    snappedStep = Math.max(0, Math.min(TOTAL_STEPS - 1, snappedStep));
-    
-    const snappedPitch = snapToDunhuangPitch(Math.round(n.pitch));
+    const snapped = normalizeNote(n);
 
-    if (!usedSteps.has(snappedStep)) {
-      usedSteps.add(snappedStep);
-      snappedUserNotes.push({
-        ...n,
-        step: snappedStep,
-        pitch: snappedPitch
-      });
+    if (!usedSteps.has(snapped.step)) {
+      usedSteps.add(snapped.step);
+      snappedUserNotes.push(snapped);
     }
   });
 
@@ -248,7 +322,7 @@ const scheduleNotePlayback = (
   ctx: AudioContext,
   note: Note,
   noteStartTime: number,
-  stepDuration: number
+  tickDuration: number
 ) => {
   const midi = PITCH_TO_MIDI[Math.round(note.pitch)];
   if (midi === undefined) return;
@@ -256,7 +330,7 @@ const scheduleNotePlayback = (
   const synth = VOICE_SYNTHS[note.voice];
   const transposedMidi = midi + synth.transpose;
   const freq = 440 * Math.pow(2, (transposedMidi - 69) / 12);
-  const noteEndTime = noteStartTime + stepDuration;
+  const noteEndTime = noteStartTime + (note.duration ?? 1) * tickDuration;
 
   const osc = ctx.createOscillator();
   const gainNode = ctx.createGain();
@@ -289,7 +363,7 @@ const scheduleNotePlayback = (
 
 const formatAiErrorMessage = (error: unknown) => {
   if (error instanceof DOMException && error.name === 'AbortError') {
-    return 'AI 服务器响应超时（15 秒）。可能是后端正在重启，或当前推理耗时过长。';
+    return '当前 AI 服务暂时不可用。后端服务器可能正在重启，或已按夜间节费策略关机；请手动开机后再生成和声。';
   }
 
   if (error instanceof Error) {
@@ -299,7 +373,7 @@ const formatAiErrorMessage = (error: unknown) => {
     }
   }
 
-  return 'AI 服务器连接失败。可能原因包括后端未启动、网络不可达，或浏览器当前无法访问 AI 接口。';
+  return '当前 AI 服务暂时不可用。后端服务器可能已关机、未启动，或网络暂时无法访问。';
 };
 
 const formatRecordErrorMessage = (error: unknown) => {
@@ -432,14 +506,14 @@ function App() {
     }
 
     // 更新状态，触发 React 渲染动画
-    const snappedNotes = getSnappedNotes(notes);
+    const snappedNotes = deriveSustainedNotes(notes);
     setNotes(snappedNotes);
 
     setIsPlaying(true);
     setTransportMode('playing');
 
     setTimeout(() => {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioContextClass = getAudioContextClass();
       if (!AudioContextClass) {
         setIsPlaying(false);
         setTransportMode('idle');
@@ -449,7 +523,7 @@ function App() {
       audioCtxRef.current = ctx;
       void ctx.resume();
 
-      const stepDuration = 60 / PLAY_BPM;
+      const stepDuration = getTickDuration(PLAY_BPM);
       const startTime = ctx.currentTime + 0.1;
       playStartRef.current = startTime;
       playStepDurationRef.current = stepDuration;
@@ -495,7 +569,7 @@ function App() {
       return;
     }
 
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioContextClass = getAudioContextClass();
     if (!AudioContextClass) return;
 
     const ctx: AudioContext = new AudioContextClass();
@@ -510,15 +584,15 @@ function App() {
     source.connect(analyser);
     analyserRef.current = analyser;
 
-    const stepDuration = 60 / RECORD_BPM;
+    const stepDuration = getTickDuration(RECORD_BPM);
     recordStepDurationRef.current = stepDuration;
     const baseTime = ctx.currentTime + 0.25;
-    const recordStartTime = baseTime + 4 * stepDuration;
+    const recordStartTime = baseTime + 4 * TICKS_PER_BEAT * stepDuration;
     recordStartTimeRef.current = recordStartTime;
 
     const clickFreq = 1000;
     for (let i = 0; i < 4; i++) {
-      const t = baseTime + i * stepDuration;
+      const t = baseTime + i * TICKS_PER_BEAT * stepDuration;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
@@ -544,7 +618,7 @@ function App() {
     const countInTick = () => {
       if (!recordCtxRef.current) return;
       const dt = recordCtxRef.current.currentTime - baseTime;
-      const beat = Math.floor(dt / stepDuration) + 1;
+      const beat = Math.floor(dt / (TICKS_PER_BEAT * stepDuration)) + 1;
       const clampedBeat = Math.max(1, Math.min(4, beat));
       setCountInBeat(clampedBeat);
       if (recordCtxRef.current.currentTime >= recordStartTime) return;
@@ -593,7 +667,7 @@ function App() {
           setNotes((prev) => {
             const otherNotes = prev.filter((n) => n.voice !== 'user');
             const userNotes = prev.filter((n) => n.voice === 'user' && Math.round(n.step) !== step);
-            return [...otherNotes, ...userNotes, { id, pitch: pitchIndex, step, voice: 'user' }];
+            return [...otherNotes, ...userNotes, { id, pitch: pitchIndex, step, duration: 1, voice: 'user' }];
           });
         }
       }, 40);
@@ -609,20 +683,23 @@ function App() {
         }
 
         const buckets = recordBucketsRef.current;
-        const userNotes: Note[] = [];
+        const pitchTicks: Array<number | null> = [];
         for (let step = 0; step < TOTAL_STEPS; step++) {
           const m = median(buckets[step]);
-          if (m === null) continue;
+          if (m === null) {
+            pitchTicks.push(null);
+            continue;
+          }
           const minMidi = Math.min(...Object.values(PITCH_TO_MIDI));
           const maxMidi = Math.max(...Object.values(PITCH_TO_MIDI));
           let shiftedMidi = m + RECORD_OCTAVE_SHIFT;
           while (shiftedMidi < minMidi) shiftedMidi += 12;
           while (shiftedMidi > maxMidi) shiftedMidi -= 12;
           const pitchIndex = snapToDunhuangPitch(midiToPitchIndex(shiftedMidi));
-          userNotes.push({ id: generateId(), pitch: pitchIndex, step, voice: 'user' });
+          pitchTicks.push(pitchIndex);
         }
 
-        setNotes(userNotes);
+        setNotes(buildNotesFromPitchTicks(pitchTicks));
         setDetectText('');
 
         if (mediaStreamRef.current) {
@@ -636,7 +713,7 @@ function App() {
         }
         setActiveStep(null);
       }, TOTAL_STEPS * stepDuration * 1000 + 80);
-    }, 4 * stepDuration * 1000);
+    }, 4 * TICKS_PER_BEAT * stepDuration * 1000);
   }, [isCountingIn, isRecording, isPlaying, stopPlayback, stopRecording]);
 
   const handleGridClick = useCallback((pitch: number, step: number) => {
@@ -662,7 +739,13 @@ function App() {
       if (clickedIndex >= 0) {
         userNotes.splice(clickedIndex, 1);
       } else {
-        userNotes.push({ id: generateId(), pitch, step, voice: 'user' });
+        userNotes.push({
+          id: generateId(),
+          pitch,
+          step,
+          duration: 1,
+          voice: 'user',
+        });
       }
 
       return [...otherNotes, ...userNotes];
@@ -690,17 +773,12 @@ function App() {
         }
       }
 
-      const newNotes: Note[] = [];
+      const pitchTicks: Array<number | null> = Array.from({ length: TOTAL_STEPS }, () => null);
       const newCols = new Set(stepPitchMap.keys());
 
       for (const [col, pitches] of stepPitchMap.entries()) {
         const avgPitch = pitches.reduce((sum, p) => sum + p, 0) / pitches.length;
-        newNotes.push({
-          id: generateId(),
-          pitch: avgPitch,
-          step: col,
-          voice: 'user'
-        });
+        pitchTicks[col] = snapToDunhuangPitch(Math.round(avgPitch));
       }
 
       const otherNotes = prev.filter((n) => n.voice !== 'user');
@@ -709,7 +787,7 @@ function App() {
       // Remove existing user notes in columns that were drawn over
       const filteredUserNotes = userNotes.filter((n) => !newCols.has(Math.round(n.step)));
 
-      const combined = [...otherNotes, ...filteredUserNotes, ...newNotes];
+      const combined = [...otherNotes, ...filteredUserNotes, ...buildNotesFromPitchTicks(pitchTicks)];
       // 自动处理成符合要求的旋律
       return getSnappedNotes(combined);
     });
@@ -725,7 +803,7 @@ function App() {
     setIsGenerating(true);
 
     // 1. 先触发吸附更新
-    const snappedNotes = getSnappedNotes(notes);
+    const snappedNotes = deriveSustainedNotes(notes);
     setNotes(snappedNotes);
 
     // 2. 将用户绘制的旋律打包准备发送给 AI 服务器
@@ -738,7 +816,8 @@ function App() {
 
     const melodyPayload = userNotes.map(n => ({
       step: n.step,
-      pitch: n.pitch
+      pitch: n.pitch,
+      duration: n.duration,
     }));
 
     try {
@@ -771,7 +850,8 @@ function App() {
           // 使用 AI 服务器返回的真实音符数据
           setNotes((prev) => {
             const currentUserNotes = prev.filter((n) => n.voice === 'user');
-            return [...currentUserNotes, ...data.generated_notes];
+            const generatedNotes = (data.generated_notes as Note[]).map(normalizeNote);
+            return [...currentUserNotes, ...generatedNotes];
           });
         } else {
           throw new Error("API 返回格式不正确");

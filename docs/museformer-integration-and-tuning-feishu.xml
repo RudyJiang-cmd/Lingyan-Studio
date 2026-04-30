@@ -6,7 +6,7 @@
 
 <grid>
   <column width-ratio="0.5">
-    <p><b>线上前端</b><br/>http://118.195.252.229</p>
+    <p><b>线上前端</b><br/>http://119.45.247.15</p>
   </column>
   <column width-ratio="0.5">
     <p><b>GitHub</b><br/>https://github.com/RudyJiang-cmd/Lingyan-Studio</p>
@@ -48,7 +48,7 @@
   <tbody>
     <tr>
       <td>前端静态站点</td>
-      <td>118.195.252.229</td>
+      <td>119.45.247.15</td>
       <td>Nginx 托管 Vite 构建产物</td>
     </tr>
     <tr>
@@ -69,7 +69,7 @@
   <p>一开始最大的误区不是“没有模型服务器”，而是“本地源码已经改了”被误认为“线上已经接入 AI”。</p>
 </callout>
 <ul>
-  <li>118.195.252.229 上只有 Nginx，对外下发的还是旧静态包。</li>
+  <li>119.45.247.15 上只有 Nginx，对外下发的还是旧静态包。</li>
   <li>旧包里仍然保留本地规则生成逻辑，没有真正打到 43.129.229.99。</li>
   <li>页面文案甚至还保留“未来将接入 AI 音乐大模型”。</li>
   <li>因此整个排查必须分成两条链：前端部署链路和模型服务链路。</li>
@@ -107,7 +107,7 @@
 </table>
 
 <h2>4.4 录音为什么在公网 IP 上失效</h2>
-<p>不是代码逻辑断了，而是浏览器安全策略。当前站点是 <code>http://118.195.252.229</code>，很多浏览器要求 <b>HTTPS 或 localhost</b> 才允许 <code>getUserMedia</code> 打开麦克风。现在前端已经会把这个原因直接告诉用户，但要彻底修复仍然需要 HTTPS。</p>
+<p>不是代码逻辑断了，而是浏览器安全策略。当前站点是 <code>http://119.45.247.15</code>，很多浏览器要求 <b>HTTPS 或 localhost</b> 才允许 <code>getUserMedia</code> 打开麦克风。现在前端已经会把这个原因直接告诉用户，但要彻底修复仍然需要 HTTPS。</p>
 
 <h1>5. 部署链路修复</h1>
 <p>核心文件是 <code>deploy_pem.exp</code>。这里踩到过一个很典型的“假部署”：</p>
@@ -224,7 +224,7 @@
   <tbody>
     <tr><td><code>src/App.tsx</code></td><td>前端 UI、录音、AI 请求、回放逻辑</td></tr>
     <tr><td><code>server/museformer_api.py</code></td><td>FastAPI、Museformer 推理、和声后处理</td></tr>
-    <tr><td><code>deploy_pem.exp</code></td><td>前端部署到 118.195.252.229</td></tr>
+    <tr><td><code>deploy_pem.exp</code></td><td>前端部署到 119.45.247.15</td></tr>
     <tr><td><code>README.md</code></td><td>项目对外说明</td></tr>
   </tbody>
 </table>
@@ -249,3 +249,32 @@
   <li seq="auto">对短旋律和长旋律分开调参</li>
   <li seq="auto">给线上站点补 HTTPS，彻底恢复录音能力</li>
 </ol>
+
+<hr/>
+
+<h1>12. 2026-04-30 前端交互与乐谱整理更新</h1>
+
+<callout emoji="✅" background-color="light-green" border-color="green">
+  <p>本轮更新把输入体验重新收敛为稳定的四小节草稿编辑器：玩家只需要放置旋律音高，系统在播放和生成和声前再自动整理时值。</p>
+</callout>
+
+<h2>12.1 输入模型</h2>
+<ul>
+  <li>编辑态保留 16 个四分音符位置，对应四个 4/4 小节。</li>
+  <li>不在输入阶段要求玩家选择休止符、八分音符或更短时值。</li>
+  <li>乐谱网格会根据浏览器宽度动态调整横向间距，保证四个小节和终止线完整可见。</li>
+</ul>
+
+<h2>12.2 自动时值整理</h2>
+<ul>
+  <li>播放与生成和声前，前端会把玩家放下的音自动撑长到同小节内的下一个音，或撑到当前小节末尾。</li>
+  <li>同一小节只放一个音时，会形成全小节长度的音。</li>
+  <li>整理后的 <code>duration</code> 会随请求发送给 Museformer 后端，并进入 prompt MIDI 的音符长度。</li>
+</ul>
+
+<h2>12.3 视觉更新</h2>
+<ul>
+  <li>四分音符使用实心音头和符杆。</li>
+  <li>更长时值使用空心音头；全小节长度音符不显示符杆。</li>
+  <li>音符 glyph 改为统一 SVG 小字形，避免音头和符杆分离。</li>
+</ul>
