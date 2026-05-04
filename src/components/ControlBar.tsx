@@ -11,6 +11,8 @@ type ControlBarProps = {
   isPlaying: boolean;
   isCountingIn: boolean;
   isRecording: boolean;
+  stylePrompt: string;
+  onStylePromptChange: (value: string) => void;
 };
 
 const ControlBar: React.FC<ControlBarProps> = ({
@@ -22,6 +24,8 @@ const ControlBar: React.FC<ControlBarProps> = ({
   isPlaying,
   isCountingIn,
   isRecording,
+  stylePrompt,
+  onStylePromptChange,
 }) => {
   return (
     <div className="flex flex-wrap items-center gap-4 bg-white/80 backdrop-blur-sm p-4 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#EFEBE1]">
@@ -97,6 +101,16 @@ const ControlBar: React.FC<ControlBarProps> = ({
           <span className="text-[#5D4037]">男低</span>
         </div>
       </div>
+
+      <label className="flex w-full flex-col gap-2 text-xs text-[#5D4037] md:w-auto md:flex-1">
+        <span>风格控制</span>
+        <input
+          value={stylePrompt}
+          onChange={(event) => onStylePromptChange(event.target.value)}
+          placeholder="例如：更敦煌一点，节奏更强，加入箫、琵琶和古琴"
+          className="w-full rounded-xl border border-[#E5D9C8] bg-[#FFFDF8] px-4 py-3 text-sm outline-none transition-colors placeholder:text-[#B49B84] focus:border-[#8B4D24]"
+        />
+      </label>
     </div>
   );
 };

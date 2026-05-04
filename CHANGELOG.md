@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-04
+
+- Added a V0 natural-language style control path: frontend requests now send `style_prompt` plus structured controls to the Museformer API.
+- Added backend control normalization for Dunhuang style, rhythmic profiles, density, bass motion, cadence strength, and percussion toggles.
+- Added Dunhuang quartet post-processing output voices: `xiao`, `pipa`, `guqin`, and optional `percussion`, while retaining the legacy `alto` / `tenor` / `bass` path.
+- Added frontend playback/rendering compatibility for the new Dunhuang track voices.
+- Documented that natural language is translated into structured controls before post-processing; it is not passed directly into Museformer as text.
+
 ## 2026-04-30
 
 - Restored the score editor to a stable four-measure quarter-note input model.
@@ -9,3 +17,4 @@
 - Preserved generated duration data through the AI request and Museformer backend prompt path.
 - Kept rests and sub-quarter durations out of the editing workflow to avoid confusing player input.
 - Migrated the documented public preview host to `119.45.228.209`, a monthly/yearly Tencent Cloud server prepared for ICP filing.
+- Routed MuseFormer API calls through same-origin `/api/generate`; the frontend Nginx proxy now targets the backend EIP `43.129.24.82`.

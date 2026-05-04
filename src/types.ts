@@ -1,4 +1,4 @@
-export type Voice = 'user' | 'alto' | 'tenor' | 'bass';
+export type Voice = 'user' | 'alto' | 'tenor' | 'bass' | 'xiao' | 'pipa' | 'guqin' | 'percussion';
 
 export type NoteDuration = number;
 

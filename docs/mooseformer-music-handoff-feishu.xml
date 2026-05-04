@@ -1,0 +1,366 @@
+<title>灵岩谱曲台音乐生成链路与 Mooseformer 对接说明</title>
+
+<callout emoji="✅" background-color="light-green" border-color="green">
+  <h2>给对接同事的核心结论</h2>
+  <p>当前音乐生成不是类似图像模型的自然语言提示词工作流，而是“输入一段主旋律 → 转成 MIDI/REMIGEN token → Museformer 续写音乐 token → 后处理成 alto / tenor / bass 三个和声声部”。</p>
+  <p>因此，当前可调的重点不是改提示词，而是改输入旋律约束、模型采样参数、token 解析方式，以及后处理里的声部分配规则。</p>
+</callout>
+
+<h1>1. 文档目的</h1>
+<p>本文用于向后续负责音乐生成部分的同事说明：当前前后端如何工作、Mooseformer/Museformer 在链路中承担什么角色、是否存在“提示词”、以及现阶段能控制和不能控制的音乐边界。</p>
+
+<grid>
+  <column width-ratio="0.5">
+    <callout emoji="📌" background-color="light-blue" border-color="blue">
+      <h3>适合解决的问题</h3>
+      <ul>
+        <li>解释从一条主旋律到四声部播放的完整流程</li>
+        <li>判断能否像图像模型一样改 prompt</li>
+        <li>明确当前生成的是和声、低音还是鼓点</li>
+        <li>给调参同事定位应该改哪些代码</li>
+      </ul>
+    </callout>
+  </column>
+  <column width-ratio="0.5">
+    <callout emoji="⚠️" background-color="light-yellow" border-color="yellow">
+      <h3>需要先统一的口径</h3>
+      <ul>
+        <li>本文中的 Mooseformer 指当前代码里接入的 Museformer 推理后端</li>
+        <li>当前版本不包含自然语言控制入口</li>
+        <li>当前四声部中的三个 AI 声部来自模型候选音高 + 规则后处理</li>
+      </ul>
+    </callout>
+  </column>
+</grid>
+
+<hr/>
+
+<h1>2. 当前系统总览</h1>
+<p>系统分为前端谱面编辑器和后端 AI 推理服务。前端负责采集用户主旋律、展示谱面和播放；后端负责把主旋律转成模型能理解的 token，并生成可以返回前端的和声音符。</p>
+
+<whiteboard type="mermaid">
+flowchart LR
+  A["用户绘制或录入主旋律"] --> B["前端 App.tsx 整理音符"]
+  B --> C["POST /api/generate"]
+  C --> D["FastAPI /generate"]
+  D --> E["主旋律 JSON 转 MIDI"]
+  E --> F["REMIGEN token 编码"]
+  F --> G["Museformer fairseq 推理"]
+  G --> H["解析生成 token 为候选音高"]
+  H --> I["规则后处理分配 alto / tenor / bass"]
+  I --> J["返回 generated_notes"]
+  J --> K["前端渲染四声部并播放"]
+</whiteboard>
+
+<table>
+  <colgroup><col span="1" width="150"/><col span="1" width="230"/><col span="1" width="360"/></colgroup>
+  <thead>
+    <tr><th background-color="light-gray">模块</th><th background-color="light-gray">关键文件</th><th background-color="light-gray">职责</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>前端</td><td><code>src/App.tsx</code></td><td>收集主旋律、自动整理时值、请求 AI、接收 generated_notes、渲染和回放四声部。</td></tr>
+    <tr><td>后端</td><td><code>server/museformer_api.py</code></td><td>FastAPI 接口、Museformer 模型加载、token 编码、推理、token 解析和和声后处理。</td></tr>
+    <tr><td>文档</td><td><code>docs/museformer-integration-and-tuning.md</code></td><td>记录历史接入过程、部署链路、已踩问题和后续音乐性优化方向。</td></tr>
+  </tbody>
+</table>
+
+<hr/>
+
+<h1>3. 从一条旋律到四个声部，是怎么生成出来的？</h1>
+
+<h2>3.1 前端先把用户输入整理成主旋律</h2>
+<p>用户在 16 步、四小节的谱面上放置音符。前端会把音高吸附到敦煌音阶，并在播放或生成前自动整理时值：每个音会延长到同小节内的下一个音之前，如果该小节只有一个音，则延长到小节末尾。</p>
+
+<callout emoji="ℹ️" background-color="light-blue" border-color="blue">
+  <p>发给后端的不是音频，也不是自然语言，而是一组结构化音符：<code>{ step, pitch, duration }</code>。其中 step 表示第几个四分音符格，pitch 是前端谱面音高索引，duration 是整理后的持续步数。</p>
+</callout>
+
+<pre lang="json" caption="前端发送给后端的请求结构"><code>{
+  "melody": [
+    { "step": 0, "pitch": 14, "duration": 2 },
+    { "step": 2, "pitch": 12, "duration": 2 },
+    { "step": 4, "pitch": 10, "duration": 4 }
+  ]
+}</code></pre>
+
+<h2>3.2 后端把主旋律翻译成模型语言</h2>
+<p>Museformer 不能直接理解前端 JSON。后端会先用 <code>miditoolkit</code> 创建一个临时 MIDI 对象，再用 <code>MidiEncoder("REMIGEN")</code> 编码成模型词表中的 token。</p>
+
+<whiteboard type="mermaid">
+flowchart TD
+  A["前端 melody JSON"] --> B["读取 step / pitch / duration"]
+  B --> C["pitch 索引映射为 MIDI pitch"]
+  C --> D["写入 miditoolkit.MidiFile"]
+  D --> E["MidiEncoder(REMIGEN)"]
+  E --> F["fairseq dictionary.encode_line"]
+  F --> G["prefix_tokens 输入 Museformer"]
+</whiteboard>
+
+<h2>3.3 Museformer 做的是“基于前缀续写”</h2>
+<p>当前后端把用户主旋律编码后的 token 作为 <code>prefix_tokens</code> 传给模型。模型会在这个前缀后继续生成一串音乐 token。可以把它理解成：模型先看到一段已经存在的音乐材料，然后按训练时学到的音乐 token 分布继续往后写。</p>
+
+<blockquote>更通俗地说：它不是读一句“请生成低音、鼓点、国风一点”的文字命令，而是读一段已经编码好的音乐片段，然后续写音乐 token。</blockquote>
+
+<h2>3.4 后处理把模型输出整理成三个 AI 声部</h2>
+<p>Museformer 原始输出并不是直接可展示的完整 SATB 四部和声。当前代码会先从生成 token 中提取每个 step 附近的候选音高，再按规则分配为 <code>alto</code>、<code>tenor</code>、<code>bass</code> 三个声部。</p>
+
+<table>
+  <colgroup><col span="1" width="150"/><col span="1" width="230"/><col span="1" width="360"/></colgroup>
+  <thead>
+    <tr><th background-color="light-gray">声部</th><th background-color="light-gray">当前来源</th><th background-color="light-gray">选择逻辑</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>user / soprano</td><td>用户输入</td><td>前端保留用户主旋律，不由 AI 覆盖。</td></tr>
+    <tr><td>alto</td><td>AI 候选音高 + 规则选择</td><td>倾向贴近主旋律下方较近音区，并避免和主旋律同音。</td></tr>
+    <tr><td>tenor</td><td>AI 候选音高 + 规则选择</td><td>倾向主旋律下方更远音区，并参考前一步音高减少大跳。</td></tr>
+    <tr><td>bass</td><td>AI 候选音高 + 规则选择</td><td>优先作为低声部支撑，但当前仍偏保守，容易重复同一落点。</td></tr>
+  </tbody>
+</table>
+
+<hr/>
+
+<h1>4. 当前有没有提示词？能不能像图像模型那样调 prompt？</h1>
+
+<callout emoji="❗" background-color="light-yellow" border-color="yellow">
+  <h2>结论：当前没有自然语言提示词入口</h2>
+  <p>现在的“prompt”不是中文或英文提示词，而是音乐 token 前缀。代码里的 <code>build_prompt_token_strs</code> 指的是把用户旋律构造成模型前缀，而不是让用户输入文字描述。</p>
+</callout>
+
+<grid>
+  <column width-ratio="0.5">
+    <h3>图像模型式 prompt</h3>
+    <ul>
+      <li>输入：“生成敦煌风格、低音更强、鼓点密集”</li>
+      <li>模型理解自然语言和视觉目标之间的关系</li>
+      <li>调参方式主要是改提示词、负面词、风格词和采样参数</li>
+    </ul>
+  </column>
+  <column width-ratio="0.5">
+    <h3>当前 Museformer 链路</h3>
+    <ul>
+      <li>输入：主旋律对应的 REMIGEN token</li>
+      <li>模型基于音乐 token 前缀续写</li>
+      <li>调参方式主要是改音乐输入、采样参数和后处理规则</li>
+    </ul>
+  </column>
+</grid>
+
+<p>所以，对接同事如果问“能不能加 prompt”，需要区分两个层面：</p>
+<table>
+  <colgroup><col span="1" width="220"/><col span="1" width="160"/><col span="1" width="360"/></colgroup>
+  <thead>
+    <tr><th background-color="light-gray">问题</th><th background-color="light-gray">当前答案</th><th background-color="light-gray">说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>能不能输入文字提示词？</td><td><span text-color="red">当前不能</span></td><td>前端请求体只有 melody，没有 style、prompt、instrument 等字段；后端也没有自然语言编码器。</td></tr>
+    <tr><td>代码里有没有 prompt？</td><td><span text-color="yellow">有，但不是自然语言</span></td><td><code>prompt_token_strs</code> 是音乐 token 前缀，来自用户主旋律。</td></tr>
+    <tr><td>能不能未来支持文字控制？</td><td><span text-color="green">可以扩展，但不是小改文案</span></td><td>需要新增控制字段、设计规则映射，或换/接入支持文本条件的音乐模型。</td></tr>
+  </tbody>
+</table>
+
+<hr/>
+
+<h1>5. 当前能生成什么，不能生成什么？</h1>
+
+<h2>5.1 当前稳定支持：主旋律补三层和声</h2>
+<p>当前产品定位是“四声部谱曲工具”。用户提供主旋律后，系统补出 <code>alto</code>、<code>tenor</code>、<code>bass</code> 三层，并和主旋律一起播放。</p>
+
+<callout emoji="✅" background-color="light-green" border-color="green">
+  <p>可以对外表述为：当前版本支持“根据一条主旋律生成可视化、可试听的四声部和声建议”。这里的四声部是 soprano/user + alto + tenor + bass。</p>
+</callout>
+
+<h2>5.2 当前不稳定或不支持的能力边界</h2>
+<table>
+  <colgroup><col span="1" width="220"/><col span="1" width="140"/><col span="1" width="420"/></colgroup>
+  <thead>
+    <tr><th background-color="light-gray">能力</th><th background-color="light-gray">当前状态</th><th background-color="light-gray">原因与说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>指定“生成低音线”</td><td><span text-color="yellow">部分支持</span></td><td>已有 bass 声部，但它是规则后处理分配出来的低声部，不是模型按“低音线”指令生成。</td></tr>
+    <tr><td>指定“生成和弦”</td><td><span text-color="yellow">间接支持</span></td><td>三个 AI 声部同时响起时会形成纵向和声，但当前没有显式和弦名称、级数或功能和声控制。</td></tr>
+    <tr><td>指定“生成旋律线”</td><td><span text-color="yellow">部分支持</span></td><td>alto / tenor / bass 都是连续声部，但音乐性主要靠后处理平滑规则，不等同于可控的独立旋律创作。</td></tr>
+    <tr><td>指定“生成鼓点”</td><td><span text-color="red">不支持</span></td><td>当前输入、输出和前端谱面都按有音高音符处理，后端也没有鼓组/打击乐声部映射。</td></tr>
+    <tr><td>指定乐器音色</td><td><span text-color="yellow">播放层粗略支持</span></td><td>浏览器用不同波形区分声部，但这只是回放音色，不是模型生成层面的乐器编配。</td></tr>
+    <tr><td>指定风格，如“更敦煌/更古典/更现代”</td><td><span text-color="red">当前不支持</span></td><td>没有自然语言提示词，也没有 style 参数；敦煌感主要来自前端音阶约束。</td></tr>
+    <tr><td>生成完整歌曲结构</td><td><span text-color="red">不支持</span></td><td>当前编辑器固定 16 步、四小节，适合短旋律草稿和和声建议。</td></tr>
+  </tbody>
+</table>
+
+<hr/>
+
+<h1>6. 对接同事应该从哪里调？</h1>
+
+<p>如果目标是“让音乐听起来更好”，优先不要动模型加载链路，而是从后处理和输入约束开始。当前最安全的调试点集中在 <code>server/museformer_api.py</code>。</p>
+
+<whiteboard type="mermaid">
+flowchart TD
+  A["想改善生成效果"] --> B{"目标是什么？"}
+  B -->|"低音更有走向"| C["调 VOICE_TARGET_INTERVALS / bass 选择规则"]
+  B -->|"内声部更顺"| D["调 previous_voice_pitch 平滑权重"]
+  B -->|"减少撞主旋律"| E["调 used_pitches 和候选过滤"]
+  B -->|"强拍更稳定"| F["新增节拍强弱与终止规则"]
+  B -->|"风格/乐器/鼓点"| G["需要新增控制字段或模型能力"]
+</whiteboard>
+
+<table>
+  <colgroup><col span="1" width="230"/><col span="1" width="260"/><col span="1" width="330"/></colgroup>
+  <thead>
+    <tr><th background-color="light-gray">调试目标</th><th background-color="light-gray">优先位置</th><th background-color="light-gray">建议方式</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>bass 不要总重复</td><td><code>choose_voice_pitch</code>、<code>arrange_harmony_notes</code></td><td>加入级进、终止音、根音倾向、避免连续重复的惩罚。</td></tr>
+    <tr><td>alto / tenor 更像声部</td><td><code>VOICE_TARGET_INTERVALS</code>、平滑评分</td><td>提高相邻音平滑权重，加入反向进行和邻接进行偏好。</td></tr>
+    <tr><td>和声不要和主旋律冲突</td><td><code>used_pitches</code>、候选过滤</td><td>继续强化同 step 去重、避免同 pitch、避免声部交叉。</td></tr>
+    <tr><td>强拍更稳定，弱拍更流动</td><td>新增 step 节拍规则</td><td>step 0/4/8/12 优先稳定音，弱拍允许经过音。</td></tr>
+    <tr><td>暴露可配置参数给前端</td><td>前端请求体 + 后端 Pydantic model</td><td>新增 mode、density、bass_motion 等结构化字段，不建议直接叫 prompt。</td></tr>
+  </tbody>
+</table>
+
+<callout emoji="⚠️" background-color="light-yellow" border-color="yellow">
+  <h2>不要优先改的地方</h2>
+  <p>不建议一上来改 Museformer 根目录、checkpoint、fairseq task、词表或模型加载参数。这些属于底层推理链路，风险高，且不一定能直接改善听感。当前音乐性问题主要在“模型输出如何被解释和安排成声部”。</p>
+</callout>
+
+<hr/>
+
+<h1>7. 如果未来要支持“提示词”或更强控制，应怎么做？</h1>
+
+<p>未来可以做控制能力，但建议不要直接套用图像模型的 prompt 思路，而是分阶段加结构化音乐控制。</p>
+
+<table>
+  <colgroup><col span="1" width="120"/><col span="1" width="260"/><col span="1" width="420"/></colgroup>
+  <thead>
+    <tr><th background-color="light-gray">阶段</th><th background-color="light-gray">做法</th><th background-color="light-gray">收益与代价</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>L1</td><td>新增结构化参数</td><td>例如 <code>density</code>、<code>bass_motion</code>、<code>cadence_strength</code>。实现成本较低，主要映射到后处理规则。</td></tr>
+    <tr><td>L2</td><td>新增音乐语义控制</td><td>例如指定调式、终止类型、和弦密度、是否允许经过音。需要更系统的规则设计。</td></tr>
+    <tr><td>L3</td><td>接入支持文本条件的音乐模型</td><td>真正支持“文字提示词→音乐生成”。成本最高，可能需要替换或并联当前 Museformer。</td></tr>
+  </tbody>
+</table>
+
+<grid>
+  <column width-ratio="0.5">
+    <callout emoji="✅" background-color="light-green" border-color="green">
+      <h3>推荐近期方案</h3>
+      <p>先加结构化控制参数，不直接开放自由文本 prompt。例如“低音活跃度”“和声密度”“终止稳定度”。这些更容易和当前后处理规则对齐。</p>
+    </callout>
+  </column>
+  <column width-ratio="0.5">
+    <callout emoji="❌" background-color="light-red" border-color="red">
+      <h3>不推荐近期方案</h3>
+      <p>直接给前端加一个 prompt 输入框，然后把文字传给现有 Museformer。当前后端没有自然语言理解模块，这样传了也不会被模型使用。</p>
+    </callout>
+  </column>
+</grid>
+
+<hr/>
+
+<h1>8. 给同事的对接话术</h1>
+
+<callout emoji="📝" background-color="light-blue" border-color="blue">
+  <p>当前音乐生成链路不是文字 prompt 驱动，而是主旋律条件续写。前端把用户画出的主旋律整理成 step、pitch、duration，后端转成 MIDI 和 REMIGEN token，作为 Museformer 的 prefix tokens 做续写。模型输出后，我们再从 token 里提取候选音高，并用规则分配成 alto、tenor、bass 三个声部。现在能稳定做的是“主旋律补三层和声”，不能直接用一句话要求它生成鼓点、指定乐器或指定风格。如果要调音乐质量，建议优先改后处理规则，例如 bass 走向、内声部平滑、强弱拍稳定度和避免声部冲突。</p>
+</callout>
+
+<h2>交接检查清单</h2>
+<checkbox done="false">确认前端请求体是否仍为 <code>{ melody: [...] }</code>，是否要新增控制参数。</checkbox>
+<checkbox done="false">确认后端 <code>/generate</code> 是否仍只返回 <code>generated_notes</code>。</checkbox>
+<checkbox done="false">修改音乐性前，先准备 3 到 5 条固定测试旋律做前后对比。</checkbox>
+<checkbox done="false">每次调参记录 bass、alto、tenor 的听感变化，不只看接口是否成功。</checkbox>
+<checkbox done="false">如果要做鼓点、乐器、风格 prompt，先评估是否需要新增模型或结构化控制层。</checkbox>
+
+<hr/>
+
+<h1>9. 当前边界总结</h1>
+<table>
+  <colgroup><col span="1" width="240"/><col span="1" width="480"/></colgroup>
+  <thead>
+    <tr><th background-color="light-gray">问题</th><th background-color="light-gray">一句话答案</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>现在的音乐怎么训练出来？</td><td>本项目没有训练模型，使用已有 Museformer checkpoint 做推理；项目代码负责接入、编码、推理调用和后处理。</td></tr>
+    <tr><td>怎么通过一个旋律得到四个旋律？</td><td>用户主旋律保留为 soprano，模型输出候选音高，后处理补出 alto、tenor、bass。</td></tr>
+    <tr><td>有没有提示词？</td><td>没有自然语言提示词；只有由主旋律编码出来的音乐 token 前缀。</td></tr>
+    <tr><td>能不能像图像模型一样改 prompt？</td><td>当前不能。可调的是结构化音乐参数、采样参数和后处理规则。</td></tr>
+    <tr><td>能不能生成低音？</td><td>可以生成 bass 声部，但它来自规则分配，不是文字指令控制。</td></tr>
+    <tr><td>能不能生成和弦？</td><td>能形成纵向和声，但当前没有显式和弦名称或功能和声控制。</td></tr>
+    <tr><td>能不能生成鼓点？</td><td>当前不能，需要新增打击乐表示、前端展示和后端生成逻辑。</td></tr>
+    <tr><td>下一步最值得调什么？</td><td>低音走向、内声部平滑、强拍稳定、终止感、避免重复和撞主旋律。</td></tr>
+  </tbody>
+</table>
+
+<hr/>
+
+<h1>10. 2026-05-04 已跑通的风格控制 V0</h1>
+
+<callout emoji="✅" background-color="light-green" border-color="green">
+  <h2>当前新增能力</h2>
+  <p>现在已经不是只能固定生成 alto / tenor / bass。前端新增“风格控制”输入框，后端新增 <code>style_prompt</code> 和 <code>controls</code> 协议，可以把“更敦煌一点、节奏更强、加鼓点、像箫琵琶古琴”这类自然语言翻译为结构化音乐控制。</p>
+</callout>
+
+<whiteboard type="mermaid">
+flowchart LR
+  A["自然语言风格控制"] --> B["normalize_controls 解析关键词"]
+  B --> C["结构化 controls"]
+  C --> D["Museformer 仍按主旋律 REMIGEN 前缀推理"]
+  D --> E["候选音高"]
+  C --> F["敦煌风后处理规则"]
+  E --> F
+  F --> G["xiao / pipa / guqin / percussion"]
+</whiteboard>
+
+<h2>10.1 新请求结构</h2>
+<pre lang="json" caption="自然语言中介层请求示例"><code>{
+  "melody": [
+    { "step": 0, "pitch": 14, "duration": 2 }
+  ],
+  "style_prompt": "更敦煌一点，节奏更强，加鼓点，低音要动起来，像箫琵琶古琴",
+  "controls": {
+    "style": "dunhuang",
+    "texture": "dunhuang_quartet"
+  }
+}</code></pre>
+
+<h2>10.2 后端会解析出的控制参数</h2>
+<table>
+  <colgroup><col span="1" width="180"/><col span="1" width="420"/></colgroup>
+  <thead>
+    <tr><th background-color="light-gray">参数</th><th background-color="light-gray">实际作用</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>style</code></td><td>当前主要支持 <code>dunhuang</code>，用于强化敦煌音阶锚点和 #4 色彩。</td></tr>
+    <tr><td><code>texture</code></td><td><code>satb</code> 保持旧四声部；<code>dunhuang_quartet</code> 输出箫、琵琶、古琴轨道。</td></tr>
+    <tr><td><code>rhythm_profile</code></td><td><code>sparse</code> / <code>steady</code> / <code>dance</code> 三档节奏密度。</td></tr>
+    <tr><td><code>density</code></td><td>控制中高声部是否更密集。</td></tr>
+    <tr><td><code>bass_motion</code></td><td>给低声部连续重复加惩罚，让古琴/低音更愿意移动。</td></tr>
+    <tr><td><code>cadence_strength</code></td><td>强化强拍、终止和稳定落点。</td></tr>
+    <tr><td><code>percussion</code></td><td>开启后额外输出规则鼓点轨道。</td></tr>
+  </tbody>
+</table>
+
+<h2>10.3 新输出轨道</h2>
+<table>
+  <colgroup><col span="1" width="160"/><col span="1" width="420"/></colgroup>
+  <thead>
+    <tr><th background-color="light-gray">轨道</th><th background-color="light-gray">当前职责</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>xiao</code> / 箫</td><td>高位长线和装饰性旋律，负责“吹奏感”。</td></tr>
+    <tr><td><code>pipa</code> / 琵琶</td><td>中声部织体，节奏密度更高，负责颗粒感。</td></tr>
+    <tr><td><code>guqin</code> / 古琴</td><td>低声部骨架，负责稳定支撑和终止落点。</td></tr>
+    <tr><td><code>percussion</code> / 鼓点</td><td>规则节奏轨道，不走 Museformer，用来补足节奏感。</td></tr>
+  </tbody>
+</table>
+
+<callout emoji="⚠️" background-color="light-yellow" border-color="yellow">
+  <h2>仍需保持清楚的边界</h2>
+  <p><code>style_prompt</code> 不是直接给 Museformer 的文本 prompt。Museformer 仍只接收主旋律音乐 token；自然语言只影响后处理规则。鼓点当前也是规则生成，不是模型生成。</p>
+</callout>
+
+<h2>10.4 音乐同事可直接试的话术</h2>
+<ul>
+  <li>更敦煌一点，节奏更清楚，像箫、琵琶、古琴逐轨织出来</li>
+  <li>更有节奏，加鼓点，低音要动起来</li>
+  <li>空灵一点，少一点音，像石窟里的回声</li>
+  <li>琵琶更碎一点，古琴更稳一点，终止感更强</li>
+</ul>

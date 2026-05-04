@@ -6,7 +6,7 @@
 
 - 线上前端：`http://119.45.228.209`
 - GitHub：`https://github.com/RudyJiang-cmd/Lingyan-Studio`
-- AI 后端：`http://43.129.229.99:8000/generate`
+- AI 后端：浏览器请求 `/api/generate`，前端 Nginx 反向代理到 MuseFormer EIP `43.129.24.82`
 - 当前状态：
   - 前端已经真实请求 Museformer 后端
   - 后端已经以 `systemd` 方式稳定运行
@@ -22,7 +22,7 @@
 | 角色 | 地址 | 实际职责 |
 | --- | --- | --- |
 | 前端静态站点 | `119.45.228.209` | Nginx 托管 Vite 构建产物 |
-| 模型后端 | `43.129.229.99` | FastAPI + Museformer 推理服务 |
+| 模型后端 | EIP `43.129.24.82` | FastAPI + Museformer 推理服务 |
 | 代码仓库 | GitHub `RudyJiang-cmd/Lingyan-Studio` | 前后端代码、部署脚本、文档 |
 
 2026-04-30 迁移说明：前端静态站点已迁移到新的包年包月腾讯云服务器 `119.45.228.209`，用于后续 ICP 备案流程；旧的按量/临时服务器在确认新站稳定后再销毁。
@@ -31,7 +31,7 @@
 
 1. 用户在前端五线谱上绘制主旋律。
 2. `src/App.tsx` 取出 `voice === 'user'` 的音符，组装成 `[{ step, pitch }]`。
-3. 前端向 `http://43.129.229.99:8000/generate` 发起 `POST` 请求。
+3. 前端向同源 `/api/generate` 发起 `POST` 请求。
 4. `server/museformer_api.py` 将旋律转成 MIDI，再编码成 Museformer 使用的 `REMIGEN` token。
 5. FastAPI 调用 Museformer 的 `fairseq` 推理。
 6. 模型输出 token 被解析为每个 step 的候选音高。
@@ -51,8 +51,8 @@
 
 因此排查被拆成两条独立链路：
 
-1. 前端部署链路：线上是否真的在请求 `43.129.229.99:8000/generate`
-2. 模型服务链路：`43.129.229.99` 上的 Museformer 是否真的能返回结果
+1. 前端部署链路：线上是否真的在请求 `/api/generate`
+2. 模型服务链路：`43.129.24.82` 上的 Museformer 是否真的能返回结果
 
 ## 4. 前端接入过程
 
@@ -63,7 +63,7 @@
 关键改动：
 
 - 把“生成和声”按钮接到真实 `fetch`
-- 请求目标改为 `http://43.129.229.99:8000/generate`
+- 请求目标改为同源 `/api/generate`
 - 请求失败时不再静默退回本地假生成
 - 明确处理：
   - 超时
@@ -348,3 +348,119 @@ Museformer 原始输出不是可以直接展示给用户的完整 SATB 和声，
 - 迁移原因：使用包年包月服务器承载站点，便于后续完成 ICP 备案。
 - 迁移范围：仅前端 Nginx 静态站点；Museformer 模型后端仍保持当前独立 GPU/推理服务地址。
 - 风险控制：旧服务器暂不销毁，等待新服务器部署验证通过并获得明确确认后再处理。
+
+## 15. 2026-05-04 自然语言中介层与敦煌风格控制 V0
+
+本轮没有训练新模型，也没有把中文提示词直接塞进 Museformer。当前实现的是一层可控的中介协议：
+
+1. 前端把玩家主旋律继续发送为 `melody`。
+2. 前端新增发送 `style_prompt`，默认文案是“更有敦煌风格，节奏更清楚，像箫、琵琶、古琴逐轨织出来”。
+3. 前端同时发送基础结构化控制：
+   - `style: dunhuang`
+   - `texture: dunhuang_quartet`
+4. 后端 `normalize_controls(...)` 会把自然语言关键词翻译成结构化控制参数。
+5. Museformer 仍然只接收主旋律转换出的 REMIGEN 音乐 token。
+6. 模型输出 token 后，后处理根据结构化控制把候选音高分配为敦煌轨道。
+
+### 15.1 新增请求协议
+
+```json
+{
+  "melody": [
+    { "step": 0, "pitch": 14, "duration": 2 }
+  ],
+  "style_prompt": "更敦煌一点，节奏更强，加鼓点，低音要动起来，像箫琵琶古琴",
+  "controls": {
+    "style": "dunhuang",
+    "texture": "dunhuang_quartet"
+  }
+}
+```
+
+返回值会继续包含 `generated_notes`，并额外返回后端实际使用的 `controls`，便于调试：
+
+```json
+{
+  "status": "success",
+  "generated_notes": [],
+  "controls": {
+    "style": "dunhuang",
+    "texture": "dunhuang_quartet",
+    "rhythm_profile": "dance",
+    "dunhuang_level": 0.85,
+    "density": 0.75,
+    "bass_motion": 0.7,
+    "cadence_strength": 0.75,
+    "percussion": true
+  }
+}
+```
+
+### 15.2 自然语言不是模型 prompt
+
+这里必须保持口径清楚：
+
+- `style_prompt` 是给后端规则层读的，不是给 Museformer 直接读的。
+- Museformer 仍然基于主旋律音乐 token 做续写。
+- 自然语言只负责影响后处理目标，例如节奏密度、低音运动、是否输出打击乐轨道。
+
+这条路线适合当前比赛原型阶段，因为它能快速把“更敦煌”“节奏更强”“加鼓点”这类自然语言落到可执行规则上。
+
+### 15.3 后端控制参数
+
+| 参数 | 作用 |
+| --- | --- |
+| `style` | 当前主要支持 `dunhuang`，用于强化敦煌音阶锚点和 #4 色彩。 |
+| `texture` | `satb` 保持旧 alto / tenor / bass；`dunhuang_quartet` 输出 xiao / pipa / guqin。 |
+| `rhythm_profile` | `sparse` / `steady` / `dance` 三档节奏型。 |
+| `density` | 控制中高声部是否更密集。 |
+| `bass_motion` | 给低声部连续重复加惩罚，让古琴/低音更愿意移动。 |
+| `cadence_strength` | 强化强拍、终止和稳定落点。 |
+| `percussion` | 开启后额外输出 `percussion` 轨道，当前是规则鼓点，不走 Museformer。 |
+
+### 15.4 新增输出声部
+
+旧路径仍然支持：
+
+- `alto`
+- `tenor`
+- `bass`
+
+敦煌四轨路径新增：
+
+- `xiao`：高位线条，偏长线和装饰。
+- `pipa`：中声部织体，节奏密度更高。
+- `guqin`：低声部骨架，加入低音运动和终止偏好。
+- `percussion`：规则生成的节奏轨道，用于补足节奏感。
+
+### 15.5 当前边界
+
+已跑通：
+
+- 自然语言到结构化控制的关键词解析。
+- 后端按 `dunhuang_quartet` 返回 `xiao / pipa / guqin`。
+- 自然语言包含“鼓点 / drum / percussion”时返回 `percussion`。
+- 前端可以渲染和播放新增声部，不会因新 voice 崩溃。
+
+仍未完成：
+
+- Museformer 本身仍不理解自然语言。
+- 鼓点是规则生成，不是模型生成。
+- 当前前端仍是 16 步四小节，真正细节化节奏建议后续升级到 32 或 64 步。
+- 浏览器音色仍是 Web Audio 简单波形，不是真实箫、琵琶、古琴采样。
+
+### 15.6 给音乐同事的调试方法
+
+非编程同事可以先通过前端“风格控制”输入框试这些话术：
+
+- `更敦煌一点，节奏更清楚，像箫、琵琶、古琴逐轨织出来`
+- `更有节奏，加鼓点，低音要动起来`
+- `空灵一点，少一点音，像石窟里的回声`
+- `琵琶更碎一点，古琴更稳一点，终止感更强`
+
+Codex 后续可把这些话术进一步固化成参数模板。调试时优先比较四件事：
+
+1. 是否更像敦煌。
+2. 节奏是否更清楚。
+3. `guqin` 是否承担了低声部骨架。
+4. `pipa` 是否提供了中层节奏织体。

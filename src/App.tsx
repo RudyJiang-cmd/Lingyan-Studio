@@ -19,7 +19,7 @@ const TICKS_PER_BEAT = 1;
 const PLAY_BPM = 200;
 const RECORD_BPM = 100;
 const RECORD_OCTAVE_SHIFT = 12;
-const AI_API_URL = 'http://43.129.229.99:8000/generate';
+const AI_API_URL = import.meta.env.VITE_AI_API_URL ?? '/api/generate';
 const AI_REQUEST_TIMEOUT_MS = 15000;
 
 const PITCH_TO_MIDI: Record<number, number> = {
@@ -79,6 +79,38 @@ const VOICE_SYNTHS: Record<Voice, {
     release: 0.12,
     transpose: -24,
     pan: 0.4,
+  },
+  xiao: {
+    type: 'sine',
+    gain: 0.14,
+    attack: 0.02,
+    release: 0.09,
+    transpose: 0,
+    pan: -0.25,
+  },
+  pipa: {
+    type: 'triangle',
+    gain: 0.1,
+    attack: 0.01,
+    release: 0.06,
+    transpose: -12,
+    pan: 0.05,
+  },
+  guqin: {
+    type: 'square',
+    gain: 0.08,
+    attack: 0.03,
+    release: 0.14,
+    transpose: -24,
+    pan: 0.3,
+  },
+  percussion: {
+    type: 'square',
+    gain: 0.05,
+    attack: 0.005,
+    release: 0.03,
+    transpose: 0,
+    pan: 0,
   },
 };
 
@@ -408,6 +440,7 @@ const formatRecordErrorMessage = (error: unknown) => {
 
 function App() {
   const [notes, setNotes] = useState<Note[]>([]);
+  const [stylePrompt, setStylePrompt] = useState('更有敦煌风格，节奏更清楚，像箫、琵琶、古琴逐轨织出来');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isCountingIn, setIsCountingIn] = useState(false);
@@ -828,7 +861,14 @@ function App() {
         const response = await fetch(AI_API_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ melody: melodyPayload }),
+          body: JSON.stringify({
+            melody: melodyPayload,
+            style_prompt: stylePrompt,
+            controls: {
+              style: 'dunhuang',
+              texture: 'dunhuang_quartet',
+            },
+          }),
           signal: controller.signal
         });
 
@@ -866,7 +906,7 @@ function App() {
     } finally {
       setIsGenerating(false);
     }
-  }, [isCountingIn, isGenerating, isRecording, notes]);
+  }, [isCountingIn, isGenerating, isRecording, notes, stylePrompt]);
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#3E2723] font-serif flex flex-col items-center py-10 px-4">
@@ -887,6 +927,8 @@ function App() {
           isPlaying={isPlaying}
           isCountingIn={isCountingIn}
           isRecording={isRecording}
+          stylePrompt={stylePrompt}
+          onStylePromptChange={setStylePrompt}
         />
 
         <TransportBar

@@ -32,6 +32,10 @@ const COLORS: Record<Voice, string> = {
   alto: '#C2410C',
   tenor: '#988A75',
   bass: '#31304D',
+  xiao: '#8F4D24',
+  pipa: '#9B6B2A',
+  guqin: '#2F4D52',
+  percussion: '#6B4F3A',
 };
 
 const needsSharp = (pitch: number) => {
