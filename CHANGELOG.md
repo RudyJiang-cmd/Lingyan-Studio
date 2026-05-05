@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-05
+
+- Replaced the public site entry with the new mobile-first Dunhuang interaction flow.
+- Added the `dunhuang.html` mobile prototype entry and routed the root `index.html` to the same experience for production deployment.
+- Added humming and preset input flow, BPM 120 count-in/recording simulation, pitch preview, quartet score animation, browser synthesis playback, and survey/finish pages.
+- Connected the mobile composition stage to the same-origin `/api/generate` Museformer backend path, with strict failure handling: backend failures show an explicit error and never create fake accompaniment tracks.
+- Kept compatibility with legacy backend voices `alto` / `tenor` / `bass` by mapping them to `xiao` / `pipa` / `guqin` in the mobile score.
+- Configured local Vite development proxy for `/api` to the Tencent Cloud Museformer backend `43.129.24.82:8000`.
+
 ## 2026-05-04
 
 - Added a V0 natural-language style control path: frontend requests now send `style_prompt` plus structured controls to the Museformer API.
