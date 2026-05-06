@@ -4,16 +4,27 @@ set ip [lindex $argv 0]
 set password [lindex $argv 1]
 set user [lindex $argv 2]
 set deploy_dir "/home/$user/deploy-[clock format [clock seconds] -format %Y%m%d-%H%M%S]"
+set key_path ""
+foreach candidate [list "/Users/jiangyihang/Downloads/ICP.pem" "ICP.pem" "/Users/jiangyihang/Downloads/TRAE.pem" "TRAE.pem"] {
+    if {[file exists $candidate]} {
+        set key_path $candidate
+        break
+    }
+}
+if {$key_path eq ""} {
+    puts "ERROR: no SSH key found. Tried ICP.pem and TRAE.pem in project root and Downloads."
+    exit 1
+}
 
 # 1. 上传打包文件
-spawn scp -i TRAE.pem -o StrictHostKeyChecking=no dist.tar.gz $user@$ip:/home/$user/
+spawn scp -i $key_path -o StrictHostKeyChecking=no dist.tar.gz $user@$ip:/home/$user/
 expect {
     "*assword:*" { send "$password\r"; exp_continue }
     eof
 }
 
 # 2. 执行远程部署命令
-spawn ssh -i TRAE.pem -o StrictHostKeyChecking=no $user@$ip
+spawn ssh -i $key_path -o StrictHostKeyChecking=no $user@$ip
 expect {
     "*assword:*" { send "$password\r"; exp_continue }
     "*$*" { send "mkdir -p $deploy_dir && tar -xzf /home/$user/dist.tar.gz -C $deploy_dir\r" }
@@ -27,6 +38,9 @@ send "sudo chown -R www-data:www-data /var/www/html/\r"
 
 expect "*$*"
 send "sudo chmod -R 755 /var/www/html/\r"
+
+expect "*$*"
+send "sudo find /var/www/html -name '._*' -delete\r"
 
 expect "*$*"
 send "sudo systemctl restart nginx\r"

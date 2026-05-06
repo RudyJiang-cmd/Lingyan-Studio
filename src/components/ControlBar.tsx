@@ -11,8 +11,6 @@ type ControlBarProps = {
   isPlaying: boolean;
   isCountingIn: boolean;
   isRecording: boolean;
-  stylePrompt: string;
-  onStylePromptChange: (value: string) => void;
 };
 
 const ControlBar: React.FC<ControlBarProps> = ({
@@ -24,8 +22,6 @@ const ControlBar: React.FC<ControlBarProps> = ({
   isPlaying,
   isCountingIn,
   isRecording,
-  stylePrompt,
-  onStylePromptChange,
 }) => {
   return (
     <div className="flex flex-wrap items-center gap-4 bg-white/80 backdrop-blur-sm p-4 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#EFEBE1]">
@@ -62,7 +58,7 @@ const ControlBar: React.FC<ControlBarProps> = ({
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         onClick={onHarmonize}
-        disabled={isGenerating || isCountingIn || isRecording}
+        disabled={isGenerating || isPlaying || isCountingIn || isRecording}
         className="relative overflow-hidden group flex items-center gap-2 px-6 py-3 bg-[#2D1B15] text-white rounded-xl font-medium transition-colors disabled:opacity-70"
       >
         <Sparkles className={`w-5 h-5 ${isGenerating ? 'animate-spin' : ''}`} />
@@ -86,31 +82,22 @@ const ControlBar: React.FC<ControlBarProps> = ({
       <div className="flex items-center gap-4 text-sm" style={{ fontFamily: 'Georgia, serif' }}>
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded-full bg-[#2D1B15] shadow-sm" />
-          <span className="text-[#5D4037]">主旋律 / 女高</span>
+          <span className="text-[#5D4037]">主旋律</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full bg-[#31304D] shadow-sm" />
-          <span className="text-[#5D4037]">女低</span>
+          <div className="w-3 h-3 rounded-full bg-[#8F4D24] shadow-sm" />
+          <span className="text-[#5D4037]">箫</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full bg-[#988A75] shadow-sm" />
-          <span className="text-[#5D4037]">男高</span>
+          <div className="w-3 h-3 rounded-full bg-[#9B6B2A] shadow-sm" />
+          <span className="text-[#5D4037]">琵琶</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full bg-[#C2410C] shadow-sm" />
-          <span className="text-[#5D4037]">男低</span>
+          <div className="w-3 h-3 rounded-full bg-[#2F4D52] shadow-sm" />
+          <span className="text-[#5D4037]">古琴</span>
         </div>
       </div>
 
-      <label className="flex w-full flex-col gap-2 text-xs text-[#5D4037] md:w-auto md:flex-1">
-        <span>风格控制</span>
-        <input
-          value={stylePrompt}
-          onChange={(event) => onStylePromptChange(event.target.value)}
-          placeholder="例如：更敦煌一点，节奏更强，加入箫、琵琶和古琴"
-          className="w-full rounded-xl border border-[#E5D9C8] bg-[#FFFDF8] px-4 py-3 text-sm outline-none transition-colors placeholder:text-[#B49B84] focus:border-[#8B4D24]"
-        />
-      </label>
     </div>
   );
 };

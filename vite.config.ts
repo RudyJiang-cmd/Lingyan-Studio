@@ -8,6 +8,7 @@ export default defineConfig({
   server: {
     allowedHosts: [
       '.loca.lt',
+      '.trycloudflare.com',
     ],
     proxy: {
       '/api': {

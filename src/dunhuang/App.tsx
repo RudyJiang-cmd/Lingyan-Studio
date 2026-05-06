@@ -63,6 +63,12 @@ type BackendResponse = {
   generated_notes?: BackendNote[];
 };
 
+type BackendHealthResponse = {
+  status?: string;
+  model_loaded?: boolean;
+  error?: string;
+};
+
 const PRESETS: Preset[] = [
   { id: 'molihua', name: '茉莉花', tone: '温柔、清亮、最容易上手' },
   { id: 'changzhongguo', name: '歌唱祖国', tone: '庄重、舒展、适合试配器' },
@@ -119,7 +125,7 @@ const introPresets = [
   '使用 茉莉花 作为预设',
 ];
 
-const CAPTURE_BPM = 120;
+const CAPTURE_BPM = 160;
 const CAPTURE_BEAT_MS = (60_000 / CAPTURE_BPM);
 const CAPTURE_COUNT_IN_BEATS = 4;
 const CAPTURE_BARS = 4;
@@ -130,7 +136,9 @@ const CAPTURE_TAIL_MS = 450;
 const MIN_DETECT_FREQ = 70;
 const MAX_DETECT_FREQ = 1100;
 const AI_API_URL = import.meta.env.VITE_AI_API_URL ?? '/api/generate';
+const AI_HEALTH_URL = import.meta.env.VITE_AI_HEALTH_URL ?? '/api/health';
 const AI_REQUEST_TIMEOUT_MS = 15000;
+const AI_HEALTH_TIMEOUT_MS = 5000;
 
 const PITCH_TO_MIDI: Record<number, number> = {
   14: 60,
@@ -150,7 +158,7 @@ const PITCH_TO_MIDI: Record<number, number> = {
   0: 84,
 };
 
-const ALLOWED_PITCHES = [0, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14];
+const ALLOWED_PITCHES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
 const TRACK_SYNTHS: Record<TrackVoice, TrackSynth> = {
   user: {
@@ -445,6 +453,44 @@ const backendNotesToTrackNotes = (notes: BackendNote[], voice: TrackVoice) => {
       trackNotes[step] = snapToDunhuangPitch(Math.round(note.pitch));
     });
   return trackNotes;
+};
+
+const hasPlayableNotes = (notes: Array<number | null> | undefined) =>
+  Boolean(notes?.some((note) => note !== null && note !== undefined));
+
+const deriveFallbackTrack = (
+  leaderNotes: Array<number | null>,
+  generatedTracks: Partial<Record<TrackVoice, Array<number | null>>>,
+  voice: Exclude<TrackVoice, 'user'>
+) => {
+  const voiceOffsets: Record<Exclude<TrackVoice, 'user'>, number> = {
+    xiao: 2,
+    pipa: 5,
+    guqin: 9,
+  };
+  const source =
+    generatedTracks.pipa ??
+    generatedTracks.xiao ??
+    generatedTracks.guqin ??
+    leaderNotes;
+  return source.map((note, index) => {
+    const sourceNote = note ?? leaderNotes[index];
+    if (sourceNote === null || sourceNote === undefined) return null;
+    return snapToDunhuangPitch(sourceNote + voiceOffsets[voice]);
+  });
+};
+
+const completeGeneratedTracks = (
+  leaderNotes: Array<number | null>,
+  generatedTracks: Partial<Record<TrackVoice, Array<number | null>>>
+) => {
+  const completed = { ...generatedTracks };
+  (['xiao', 'pipa', 'guqin'] as const).forEach((voice) => {
+    if (!hasPlayableNotes(completed[voice])) {
+      completed[voice] = deriveFallbackTrack(leaderNotes, completed, voice);
+    }
+  });
+  return completed as Record<Exclude<TrackVoice, 'user'>, Array<number | null>>;
 };
 
 const getSustainedDuration = (notes: Array<number | null>, step: number) => {
@@ -975,6 +1021,7 @@ export default function App() {
   const [capturePhase, setCapturePhase] = useState<CapturePhase>('idle');
   const [micError, setMicError] = useState('');
   const [isRequestingMic, setIsRequestingMic] = useState(false);
+  const [isCheckingBackend, setIsCheckingBackend] = useState(false);
   const [detectedPitch, setDetectedPitch] = useState('待识别');
   const [countdown, setCountdown] = useState(4);
   const [recordProgress, setRecordProgress] = useState(0);
@@ -1215,7 +1262,50 @@ export default function App() {
     window.setTimeout(() => beginCapture(mode), 120);
   };
 
-  const startComposeGeneration = (inputNotes: Array<number | null>) => {
+  const checkBackendReady = async () => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), AI_HEALTH_TIMEOUT_MS);
+    try {
+      const response = await fetch(AI_HEALTH_URL, {
+        method: 'GET',
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`服务器返回 ${response.status}`);
+      }
+
+      const data = (await response.json()) as BackendHealthResponse;
+      if (data.model_loaded === false || data.status === 'error') {
+        throw new Error(data.error ? `模型未就绪：${data.error}` : '模型未就绪');
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error('后端连接超时，请稍后再试');
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  };
+
+  const startComposeGeneration = async (inputNotes: Array<number | null>) => {
+    setIsCheckingBackend(true);
+    setGenerationError('');
+    try {
+      await checkBackendReady();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '后端连接失败';
+      setGenerationError(`后端连接失败：${message}`);
+      setCaptureStarted(false);
+      setCapturePhase('idle');
+      setPlayhead(0);
+      setActiveTrackCount(1);
+      return;
+    } finally {
+      setIsCheckingBackend(false);
+    }
+
     generationRequestId.current += 1;
     const requestId = generationRequestId.current;
     const leaderOnlyTracks = buildTrackLibrary(inputNotes, {});
@@ -1236,7 +1326,7 @@ export default function App() {
     setMicError('');
     setDetectedPitch('待识别');
     stopMicCapture();
-    startComposeGeneration(DEFAULT_LEADER_NOTES);
+    void startComposeGeneration(DEFAULT_LEADER_NOTES);
   };
 
   const enterCompose = () => {
@@ -1289,11 +1379,11 @@ export default function App() {
           throw new Error('API 返回格式不正确');
         }
 
-        const generatedTracks = {
+        const generatedTracks = completeGeneratedTracks(inputNotes, {
           xiao: backendNotesToTrackNotes(data.generated_notes, 'xiao'),
           pipa: backendNotesToTrackNotes(data.generated_notes, 'pipa'),
           guqin: backendNotesToTrackNotes(data.generated_notes, 'guqin'),
-        };
+        });
         const missingVoices = Object.entries(generatedTracks)
           .filter(([, notes]) => !notes.some((note) => note !== null && note !== undefined))
           .map(([voice]) => voice);
@@ -1334,7 +1424,7 @@ export default function App() {
       timers.current.push(
         window.setTimeout(async () => {
           setLeaderNotes(DEFAULT_LEADER_NOTES);
-          startComposeGeneration(DEFAULT_LEADER_NOTES);
+          void startComposeGeneration(DEFAULT_LEADER_NOTES);
         }, 900)
       );
       return;
@@ -1404,7 +1494,7 @@ export default function App() {
       setLeaderNotes(capturedLeaderNotes);
       setRecordProgress(CAPTURE_BARS);
       setDetectedPitch('录制完成');
-      startComposeGeneration(capturedLeaderNotes);
+      void startComposeGeneration(capturedLeaderNotes);
     }, recordStartOffset + CAPTURE_TOTAL_BEATS * CAPTURE_BEAT_MS + CAPTURE_TAIL_MS);
     timers.current.push(finishTimer);
   };
@@ -1474,10 +1564,10 @@ export default function App() {
                   onClick={() => {
                     void enterCaptureAndBegin('humming');
                   }}
-                  disabled={isRequestingMic}
-                  className="input-record-button flex h-[72px] w-full max-w-[286px] items-center justify-center rounded-[999px] bg-[#5b3829] text-[17px] text-[#f7ead1] disabled:opacity-60"
-                >
-                  {isRequestingMic ? '请求麦克风' : '开始录音'}
+            disabled={isRequestingMic || isCheckingBackend}
+            className="input-record-button flex h-[72px] w-full max-w-[286px] items-center justify-center rounded-[999px] bg-[#5b3829] text-[17px] text-[#f7ead1] disabled:opacity-60"
+          >
+            {isRequestingMic ? '请求麦克风' : isCheckingBackend ? '连接后端' : '开始录音'}
                 </button>
               </div>
               <div className="input-bpm-copy mt-4 text-center text-[12px] font-semibold leading-[1.55] text-[#8a5d43]">
@@ -1504,9 +1594,10 @@ export default function App() {
                   key={`${label}-${index}`}
                   type="button"
                     onClick={() => {
-                    void choosePresetAndContinue(index);
-                  }}
-                    className="input-preset-button flex h-8 w-full items-center justify-center rounded-[999px] bg-[#ead7b1] px-4 text-[11px] font-semibold text-[#6f4a35] transition-colors"
+                      void choosePresetAndContinue(index);
+                    }}
+                    disabled={isCheckingBackend}
+                    className="input-preset-button flex h-8 w-full items-center justify-center rounded-[999px] bg-[#ead7b1] px-4 text-[11px] font-semibold text-[#6f4a35] transition-colors disabled:opacity-60"
                   >
                     {label}
                   </button>
@@ -1622,9 +1713,9 @@ export default function App() {
             className="h-[52px] flex-1 rounded-[12px] text-[16px]"
             icon={<ChevronRight className="h-4 w-4" />}
             onClick={() => beginCapture()}
-            disabled={captureStarted}
+            disabled={captureStarted || isCheckingBackend}
           >
-            {captureStarted ? '采集中' : inputMode === 'humming' ? '开始' : '进入'}
+            {isCheckingBackend ? '连接后端' : captureStarted ? '采集中' : inputMode === 'humming' ? '开始' : '进入'}
           </PrimaryButton>
         </div>
       </section>
@@ -1658,7 +1749,9 @@ export default function App() {
           <GhostButton
             className="h-[52px] rounded-[12px] px-2 text-[14px]"
             icon={<Sparkles className="h-4 w-4" />}
-            onClick={() => startComposeGeneration(leaderNotes)}
+            onClick={() => {
+              void startComposeGeneration(leaderNotes);
+            }}
           >
             重新计算
           </GhostButton>

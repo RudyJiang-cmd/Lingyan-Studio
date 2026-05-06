@@ -1,0 +1,65 @@
+<svg width="390" height="844" viewBox="0 0 390 844" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="195" y1="0" x2="195" y2="844" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FBF3DE"/>
+      <stop offset="1" stop-color="#EED39A"/>
+    </linearGradient>
+    <pattern id="grain2" width="22" height="22" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <path d="M0 0H1V22H0Z" fill="#9B6A33" fill-opacity="0.08"/>
+    </pattern>
+  </defs>
+  <rect width="390" height="844" fill="url(#bg2)"/>
+  <rect width="390" height="844" fill="url(#grain2)"/>
+  <rect x="0.5" y="0.5" width="389" height="843" stroke="#CDA66E" stroke-opacity="0.45"/>
+  <line x1="0" y1="80" x2="390" y2="80" stroke="#CDA66E" stroke-opacity="0.6"/>
+  <line x1="0" y1="764" x2="390" y2="764" stroke="#CDA66E" stroke-opacity="0.6"/>
+  <text x="195" y="36" text-anchor="middle" fill="#8A6A4F" font-size="11" letter-spacing="3">DUNHUANG ECHO</text>
+  <text x="28" y="64" fill="#4A2D1F" font-size="24" font-weight="700">取样</text>
+  <rect x="248" y="22" rx="16" ry="16" width="92" height="30" fill="#FFF7EB" stroke="#D7B37A"/>
+  <text x="294" y="42" text-anchor="middle" fill="#7D4B2D" font-size="12">选一种进入方式</text>
+
+  <rect x="124" y="96" width="242" height="40" rx="20" fill="#FFF7EB" stroke="#D7B37A"/>
+  <circle cx="138" cy="116" r="10" fill="#8B4D24"/>
+  <text x="138" y="120" text-anchor="middle" fill="#FFF7EA" font-size="10">1</text>
+  <text x="163" y="121" fill="#5F3E2D" font-size="12">知悉</text>
+  <line x1="193" y1="116" x2="210" y2="116" stroke="#D7B37A"/>
+  <circle cx="220" cy="116" r="10" fill="#8B4D24"/>
+  <text x="220" y="120" text-anchor="middle" fill="#FFF7EA" font-size="10">2</text>
+  <text x="236" y="121" fill="#5F3E2D" font-size="12" font-weight="600">取样</text>
+  <line x1="258" y1="116" x2="276" y2="116" stroke="#D7B37A"/>
+  <circle cx="286" cy="116" r="10" fill="white" stroke="#D7B37A"/>
+  <text x="286" y="120" text-anchor="middle" fill="#8F6A4D" font-size="10">3</text>
+  <text x="301" y="121" fill="#8F6A4D" font-size="12">采声</text>
+  <line x1="322" y1="116" x2="340" y2="116" stroke="#D7B37A"/>
+  <circle cx="350" cy="116" r="10" fill="white" stroke="#D7B37A"/>
+  <text x="350" y="120" text-anchor="middle" fill="#8F6A4D" font-size="10">4</text>
+  <text x="366" y="121" fill="#8F6A4D" font-size="12">织谱</text>
+
+  <rect x="124" y="158" width="60" height="28" rx="14" fill="#7A4C2B"/>
+  <text x="154" y="177" text-anchor="middle" fill="#FFF7EA" font-size="11">输入方式</text>
+  <text x="124" y="230" fill="#4A2D1F" font-size="28" font-weight="700">选一段旋律的入口</text>
+  <text x="124" y="262" fill="#6F4A35" font-size="14">哼唱更自由，预设更快。</text>
+
+  <rect x="124" y="296" width="242" height="80" rx="10" fill="#FFF3DE" stroke="#8B4D24"/>
+  <text x="143" y="329" fill="#4A2D1F" font-size="20">♪</text>
+  <text x="166" y="324" fill="#4A2D1F" font-size="15" font-weight="600">开始哼唱</text>
+  <text x="166" y="349" fill="#7B5A46" font-size="13">先给 4 拍预备，再录 4 小节。</text>
+  <text x="345" y="330" text-anchor="middle" fill="#B78356" font-size="20">›</text>
+
+  <rect x="124" y="388" width="242" height="80" rx="10" fill="#FFF8EE" stroke="#D8BD8D"/>
+  <text x="143" y="421" fill="#4A2D1F" font-size="20">✦</text>
+  <text x="166" y="416" fill="#4A2D1F" font-size="15" font-weight="600">使用预设旋律</text>
+  <text x="166" y="441" fill="#7B5A46" font-size="13">适合不方便开口时直接体验。</text>
+  <text x="345" y="422" text-anchor="middle" fill="#B78356" font-size="20">›</text>
+
+  <rect x="124" y="500" width="242" height="86" rx="10" fill="#FFF8EE" stroke="#D8BD8D"/>
+  <text x="143" y="530" fill="#5F3E2D" font-size="13" font-weight="600">预设列表</text>
+  <text x="143" y="553" fill="#8C6A52" font-size="12">茉莉花</text>
+  <text x="220" y="553" fill="#8C6A52" font-size="12">歌唱祖国</text>
+  <text x="312" y="553" fill="#8C6A52" font-size="12">最炫民族风</text>
+
+  <rect x="19" y="626" width="164" height="50" rx="8" fill="#FFF7EB" stroke="#CDA66E"/>
+  <text x="101" y="657" text-anchor="middle" fill="#6D3F27" font-size="14" font-weight="600">返回</text>
+  <rect x="197" y="626" width="174" height="50" rx="8" fill="#4A2D1F"/>
+  <text x="284" y="657" text-anchor="middle" fill="#FFF8EF" font-size="14" font-weight="600">继续</text>
+</svg>

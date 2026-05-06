@@ -9,3 +9,11 @@ export type Note = {
   duration: NoteDuration;
   voice: Voice;
 };
+
+export type ArrangementPhase = {
+  index: number;
+  label: string;
+  bars: number;
+  voices: Voice[];
+  notes: Note[];
+};

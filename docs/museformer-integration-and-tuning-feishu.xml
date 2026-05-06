@@ -15,7 +15,7 @@
 
 <whiteboard type="mermaid">flowchart LR
   A[用户在五线谱绘制主旋律] --> B[src/App.tsx 组装 melody JSON]
-  B --> C[POST 43.129.229.99:8000/generate]
+  B --> C[POST /api/generate]
   C --> D[FastAPI /generate]
   D --> E[miditoolkit 生成 prompt MIDI]
   E --> F[MidiEncoder REMIGEN 编码]
@@ -53,7 +53,7 @@
     </tr>
     <tr>
       <td>模型后端</td>
-      <td>43.129.229.99</td>
+      <td>EIP 43.129.24.82</td>
       <td>FastAPI + Museformer 推理服务</td>
     </tr>
     <tr>
@@ -74,14 +74,14 @@
 </callout>
 <ul>
   <li>119.45.228.209 上只有 Nginx，对外下发的还是旧静态包。</li>
-  <li>旧包里仍然保留本地规则生成逻辑，没有真正打到 43.129.229.99。</li>
+  <li>旧包里仍然保留本地规则生成逻辑，没有真正打到 MuseFormer 后端。</li>
   <li>页面文案甚至还保留“未来将接入 AI 音乐大模型”。</li>
   <li>因此整个排查必须分成两条链：前端部署链路和模型服务链路。</li>
 </ul>
 
 <h1>4. 前端接入过程</h1>
 <h2>4.1 真正切到 AI 后端</h2>
-<p>核心文件是 <code>src/App.tsx</code>。现在“生成和声”按钮会把玩家主旋律提取为 <code>[{ step, pitch }]</code>，并真实请求 <code>http://43.129.229.99:8000/generate</code>。</p>
+<p>核心文件是 <code>src/App.tsx</code>。现在“生成和声”按钮会把玩家主旋律提取为 <code>[{ step, pitch }]</code>，并真实请求同源 <code>/api/generate</code>，由前端 Nginx 反向代理到 MuseFormer EIP。</p>
 
 <h2>4.2 为什么要重写错误提示</h2>
 <p>早期只弹“AI 连接失败”几乎没有排查价值，因此前端改成了更细的失败分支：</p>

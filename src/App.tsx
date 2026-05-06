@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import ScoreGrid from './components/ScoreGrid';
 import ControlBar from './components/ControlBar';
 import TransportBar, { type TransportMode } from './components/TransportBar';
-import { Note, NoteDuration, Voice } from './types';
+import { ArrangementPhase, Note, NoteDuration, Voice } from './types';
 
 type BrowserAudioContextConstructor = typeof AudioContext;
 
@@ -21,6 +21,8 @@ const RECORD_BPM = 100;
 const RECORD_OCTAVE_SHIFT = 12;
 const AI_API_URL = import.meta.env.VITE_AI_API_URL ?? '/api/generate';
 const AI_REQUEST_TIMEOUT_MS = 15000;
+const PLAYBACK_ROUND_DELAY_MS = 220;
+const ARRANGEMENT_COMPLETE_LABEL = '织谱完成';
 
 const PITCH_TO_MIDI: Record<number, number> = {
   14: 60, // C4
@@ -219,6 +221,94 @@ const normalizeNote = (note: Note): Note => {
     pitch: snapToDunhuangPitch(Math.round(note.pitch)),
     duration: clampDuration(note.duration ?? 1, step),
   };
+};
+
+const LEGACY_GENERATED_VOICE_MAP: Record<string, Voice> = {
+  alto: 'xiao',
+  tenor: 'pipa',
+  bass: 'guqin',
+  xiao: 'xiao',
+  pipa: 'pipa',
+  guqin: 'guqin',
+  percussion: 'percussion',
+  user: 'user',
+};
+
+const VOICE_REVEAL_ORDER: Voice[] = ['xiao', 'pipa', 'guqin', 'percussion'];
+
+const VOICE_LABELS: Record<Voice, string> = {
+  user: '主旋律',
+  alto: '高声部',
+  tenor: '中声部',
+  bass: '低声部',
+  xiao: '箫',
+  pipa: '琵琶',
+  guqin: '古琴',
+  percussion: '鼓点',
+};
+
+const PHASE_LABELS: Record<string, string> = {
+  alto: '加入高声部',
+  tenor: '加入中声部',
+  bass: '加入低声部',
+  xiao: '加入箫',
+  pipa: '加入琵琶',
+  guqin: '加入古琴',
+  percussion: '加入鼓点',
+};
+
+const mapGeneratedVoice = (voice: unknown): Voice => {
+  if (typeof voice !== 'string') return 'xiao';
+
+  const legacyVoice = LEGACY_GENERATED_VOICE_MAP[voice];
+  if (legacyVoice) return legacyVoice;
+
+  if (Object.prototype.hasOwnProperty.call(VOICE_SYNTHS, voice)) {
+    return voice as Voice;
+  }
+
+  return 'xiao';
+};
+
+const buildSequentialArrangementPhases = (leadNotes: Note[], generatedNotes: Note[]): ArrangementPhase[] => {
+  const normalizedLeadNotes = leadNotes.map((note) => ({
+    ...normalizeNote(note),
+    voice: 'user' as Voice,
+  }));
+  const normalizedGeneratedNotes = generatedNotes.map((note) => ({
+    ...normalizeNote(note),
+    voice: mapGeneratedVoice(note.voice),
+  }));
+
+  const generatedVoices = new Set(normalizedGeneratedNotes.map((note) => note.voice));
+  const revealVoices = [
+    ...VOICE_REVEAL_ORDER.filter((voice) => generatedVoices.has(voice)),
+    ...Array.from(generatedVoices).filter((voice) => voice !== 'user' && !VOICE_REVEAL_ORDER.includes(voice)),
+  ];
+
+  const phases: ArrangementPhase[] = [
+    {
+      index: 1,
+      label: '主旋律敦煌化',
+      bars: 4,
+      voices: ['user'],
+      notes: normalizedLeadNotes,
+    },
+  ];
+
+  let currentNotes = [...normalizedLeadNotes];
+  revealVoices.forEach((voice, index) => {
+    currentNotes = [...currentNotes, ...normalizedGeneratedNotes.filter((note) => note.voice === voice)];
+    phases.push({
+      index: index + 2,
+      label: PHASE_LABELS[voice] ?? `加入${voice}`,
+      bars: 4,
+      voices: ['user', ...revealVoices.slice(0, index + 1)],
+      notes: currentNotes,
+    });
+  });
+
+  return phases;
 };
 
 const buildNotesFromPitchTicks = (pitchTicks: Array<number | null>): Note[] => {
@@ -440,7 +530,9 @@ const formatRecordErrorMessage = (error: unknown) => {
 
 function App() {
   const [notes, setNotes] = useState<Note[]>([]);
-  const [stylePrompt, setStylePrompt] = useState('更有敦煌风格，节奏更清楚，像箫、琵琶、古琴逐轨织出来');
+  const [arrangementPhases, setArrangementPhases] = useState<ArrangementPhase[]>([]);
+  const [visiblePhaseIndex, setVisiblePhaseIndex] = useState<number>(0);
+  const [phaseLabel, setPhaseLabel] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isCountingIn, setIsCountingIn] = useState(false);
@@ -451,10 +543,12 @@ function App() {
   const [detectText, setDetectText] = useState<string>('');
   
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const playTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playRoundTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playRafRef = useRef<number | null>(null);
   const playStartRef = useRef<number>(0);
   const playStepDurationRef = useRef<number>(0);
+  const playSequenceRef = useRef<ArrangementPhase[]>([]);
+  const playRoundIndexRef = useRef<number>(0);
   const recordCtxRef = useRef<AudioContext | null>(null);
   const recordIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -469,23 +563,29 @@ function App() {
   const userNoteIdsByStepRef = useRef<Record<number, string>>({});
   const lastCommittedStepRef = useRef<number>(-1);
 
+  const clearPlaybackTimers = useCallback(() => {
+    if (playRafRef.current !== null) {
+      cancelAnimationFrame(playRafRef.current);
+      playRafRef.current = null;
+    }
+    if (playRoundTimeoutRef.current) {
+      clearTimeout(playRoundTimeoutRef.current);
+      playRoundTimeoutRef.current = null;
+    }
+  }, []);
+
   const stopPlayback = useCallback(() => {
     if (audioCtxRef.current) {
       audioCtxRef.current.close();
       audioCtxRef.current = null;
     }
-    if (playTimeoutRef.current) {
-      clearTimeout(playTimeoutRef.current);
-      playTimeoutRef.current = null;
-    }
-    if (playRafRef.current !== null) {
-      cancelAnimationFrame(playRafRef.current);
-      playRafRef.current = null;
-    }
+    clearPlaybackTimers();
     setIsPlaying(false);
     setTransportMode('idle');
     setActiveStep(null);
-  }, []);
+    playSequenceRef.current = [];
+    playRoundIndexRef.current = 0;
+  }, [clearPlaybackTimers]);
 
   const stopRecording = useCallback(() => {
     if (countInTimeoutRef.current) {
@@ -531,6 +631,111 @@ function App() {
     };
   }, [stopPlayback, stopRecording]);
 
+  const resetArrangementState = useCallback(() => {
+    setArrangementPhases([]);
+    setVisiblePhaseIndex(0);
+    setPhaseLabel('');
+  }, []);
+
+  const playNotesSequence = useCallback((sequence: ArrangementPhase[]) => {
+    if (sequence.length === 0) return;
+
+    clearPlaybackTimers();
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close();
+      audioCtxRef.current = null;
+    }
+
+    const AudioContextClass = getAudioContextClass();
+    if (!AudioContextClass) {
+      setIsPlaying(false);
+      setTransportMode('idle');
+      return;
+    }
+
+    const ctx = new AudioContextClass();
+    audioCtxRef.current = ctx;
+    void ctx.resume();
+
+    const stepDuration = getTickDuration(PLAY_BPM);
+    const totalDurationMs = TOTAL_STEPS * stepDuration * 1000;
+    playStepDurationRef.current = stepDuration;
+    playSequenceRef.current = sequence;
+    playRoundIndexRef.current = 0;
+
+    const runRound = (roundIndex: number) => {
+      if (!audioCtxRef.current) return;
+      const phase = sequence[roundIndex];
+      if (!phase) {
+        stopPlayback();
+        return;
+      }
+
+      playRoundIndexRef.current = roundIndex;
+      setVisiblePhaseIndex(roundIndex);
+      setPhaseLabel(phase.label);
+      setNotes(phase.notes);
+
+      const startTime = audioCtxRef.current.currentTime + 0.08;
+      playStartRef.current = startTime;
+
+      phase.notes.forEach((note) => {
+        const noteStartTime = startTime + Math.round(note.step) * stepDuration;
+        scheduleNotePlayback(audioCtxRef.current!, note, noteStartTime, stepDuration);
+      });
+
+      if (playRafRef.current !== null) {
+        cancelAnimationFrame(playRafRef.current);
+        playRafRef.current = null;
+      }
+
+      const tick = () => {
+        if (!audioCtxRef.current) return;
+        const elapsed = audioCtxRef.current.currentTime - playStartRef.current;
+        const step = Math.floor(elapsed / playStepDurationRef.current);
+        if (step >= 0 && step < TOTAL_STEPS) {
+          setActiveStep(step);
+          playRafRef.current = requestAnimationFrame(tick);
+          return;
+        }
+        if (elapsed < TOTAL_STEPS * playStepDurationRef.current) {
+          playRafRef.current = requestAnimationFrame(tick);
+        }
+      };
+      tick();
+
+      playRoundTimeoutRef.current = setTimeout(() => {
+        setActiveStep(null);
+        if (roundIndex + 1 < sequence.length) {
+          runRound(roundIndex + 1);
+          return;
+        }
+
+        if (audioCtxRef.current) {
+          audioCtxRef.current.close();
+          audioCtxRef.current = null;
+        }
+        if (playRafRef.current !== null) {
+          cancelAnimationFrame(playRafRef.current);
+          playRafRef.current = null;
+        }
+        playRoundTimeoutRef.current = null;
+        playSequenceRef.current = [];
+        playRoundIndexRef.current = 0;
+        setIsPlaying(false);
+        setTransportMode('idle');
+        setActiveStep(null);
+        setVisiblePhaseIndex(sequence.length - 1);
+        setNotes(sequence[sequence.length - 1].notes);
+        setPhaseLabel(ARRANGEMENT_COMPLETE_LABEL);
+      }, totalDurationMs + PLAYBACK_ROUND_DELAY_MS);
+    };
+
+    setIsPlaying(true);
+    setTransportMode('playing');
+    runRound(0);
+  }, [clearPlaybackTimers, stopPlayback]);
+
   const handlePlay = useCallback(() => {
     if (isCountingIn || isRecording) return;
     if (isPlaying) {
@@ -538,49 +743,18 @@ function App() {
       return;
     }
 
-    // 更新状态，触发 React 渲染动画
-    const snappedNotes = deriveSustainedNotes(notes);
-    setNotes(snappedNotes);
+    const phaseSequence: ArrangementPhase[] = arrangementPhases.length > 0
+      ? arrangementPhases
+      : [{
+          index: 1,
+          label: '主旋律回放',
+          bars: 4,
+          voices: ['user' as Voice],
+          notes: deriveSustainedNotes(notes),
+        }];
 
-    setIsPlaying(true);
-    setTransportMode('playing');
-
-    setTimeout(() => {
-      const AudioContextClass = getAudioContextClass();
-      if (!AudioContextClass) {
-        setIsPlaying(false);
-        setTransportMode('idle');
-        return;
-      }
-      const ctx = new AudioContextClass();
-      audioCtxRef.current = ctx;
-      void ctx.resume();
-
-      const stepDuration = getTickDuration(PLAY_BPM);
-      const startTime = ctx.currentTime + 0.1;
-      playStartRef.current = startTime;
-      playStepDurationRef.current = stepDuration;
-
-      snappedNotes.forEach((note) => {
-        const noteStartTime = startTime + Math.round(note.step) * stepDuration;
-        scheduleNotePlayback(ctx, note, noteStartTime, stepDuration);
-      });
-
-      const totalDuration = TOTAL_STEPS * stepDuration;
-      playTimeoutRef.current = setTimeout(() => {
-        stopPlayback();
-      }, (totalDuration + 0.5) * 1000);
-
-      const tick = () => {
-        if (!audioCtxRef.current) return;
-        const t = audioCtxRef.current.currentTime - playStartRef.current;
-        const step = Math.floor(t / playStepDurationRef.current);
-        if (step >= 0 && step < TOTAL_STEPS) setActiveStep(step);
-        playRafRef.current = requestAnimationFrame(tick);
-      };
-      tick();
-    }, 300); // 300ms delay for animation
-  }, [isCountingIn, isPlaying, isRecording, notes, stopPlayback]);
+    playNotesSequence(phaseSequence);
+  }, [arrangementPhases, isCountingIn, isPlaying, isRecording, notes, playNotesSequence, stopPlayback]);
 
   const handleRecord = useCallback(async () => {
     if (isCountingIn || isRecording) {
@@ -588,6 +762,7 @@ function App() {
       return;
     }
     if (isPlaying) stopPlayback();
+    resetArrangementState();
 
     if (!navigator.mediaDevices?.getUserMedia) {
       alert('当前浏览器环境不支持麦克风录音，或页面不是 HTTPS / localhost。');
@@ -747,9 +922,10 @@ function App() {
         setActiveStep(null);
       }, TOTAL_STEPS * stepDuration * 1000 + 80);
     }, 4 * TICKS_PER_BEAT * stepDuration * 1000);
-  }, [isCountingIn, isRecording, isPlaying, stopPlayback, stopRecording]);
+  }, [isCountingIn, isRecording, isPlaying, resetArrangementState, stopPlayback, stopRecording]);
 
   const handleGridClick = useCallback((pitch: number, step: number) => {
+    resetArrangementState();
     setNotes((prev) => {
       const userNotes = prev.filter((n) => n.voice === 'user');
       const otherNotes = prev.filter((n) => n.voice !== 'user');
@@ -783,9 +959,10 @@ function App() {
 
       return [...otherNotes, ...userNotes];
     });
-  }, []);
+  }, [resetArrangementState]);
 
   const handleDrawEnd = useCallback((path: {step: number, pitch: number}[]) => {
+    resetArrangementState();
     setNotes((prev) => {
       const stepPitchMap = new Map<number, number[]>();
 
@@ -824,15 +1001,17 @@ function App() {
       // 自动处理成符合要求的旋律
       return getSnappedNotes(combined);
     });
-  }, []);
+  }, [resetArrangementState]);
 
   const handleClear = useCallback(() => {
+    resetArrangementState();
     setNotes([]);
-  }, []);
+  }, [resetArrangementState]);
 
   const handleHarmonize = useCallback(async () => {
     if (isCountingIn || isRecording) return;
     if (isGenerating) return;
+    if (isPlaying) stopPlayback();
     setIsGenerating(true);
 
     // 1. 先触发吸附更新
@@ -861,14 +1040,7 @@ function App() {
         const response = await fetch(AI_API_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            melody: melodyPayload,
-            style_prompt: stylePrompt,
-            controls: {
-              style: 'dunhuang',
-              texture: 'dunhuang_quartet',
-            },
-          }),
+          body: JSON.stringify({ melody: melodyPayload }),
           signal: controller.signal
         });
 
@@ -887,12 +1059,13 @@ function App() {
         console.log("AI 大脑返回的原始配器数据:", data);
 
         if (data.status === "success" && data.generated_notes) {
-          // 使用 AI 服务器返回的真实音符数据
-          setNotes((prev) => {
-            const currentUserNotes = prev.filter((n) => n.voice === 'user');
-            const generatedNotes = (data.generated_notes as Note[]).map(normalizeNote);
-            return [...currentUserNotes, ...generatedNotes];
-          });
+          const leadNotes = Array.isArray(data.lead_notes)
+            ? (data.lead_notes as Note[]).map(normalizeNote)
+            : userNotes.map(normalizeNote);
+          const generatedNotes = (data.generated_notes as Note[]).map(normalizeNote);
+          const phases = buildSequentialArrangementPhases(leadNotes, generatedNotes);
+          setArrangementPhases(phases);
+          playNotesSequence(phases);
         } else {
           throw new Error("API 返回格式不正确");
         }
@@ -906,7 +1079,16 @@ function App() {
     } finally {
       setIsGenerating(false);
     }
-  }, [isCountingIn, isGenerating, isRecording, notes, stylePrompt]);
+  }, [isCountingIn, isGenerating, isPlaying, isRecording, notes, playNotesSequence, stopPlayback]);
+
+  const currentPhaseCount = arrangementPhases.length;
+  const currentPhase = currentPhaseCount > 0
+    ? arrangementPhases[Math.min(visiblePhaseIndex, currentPhaseCount - 1)]
+    : null;
+  const phaseSummary = currentPhaseCount > 0
+    ? `第 ${Math.min(visiblePhaseIndex + 1, currentPhaseCount)} 轮 / 共 ${currentPhaseCount} 轮`
+    : '当前仅播放主旋律';
+  const currentPhaseVoiceLabels = currentPhase?.voices.map((voice) => VOICE_LABELS[voice] ?? voice).join(' / ');
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#3E2723] font-serif flex flex-col items-center py-10 px-4">
@@ -927,8 +1109,6 @@ function App() {
           isPlaying={isPlaying}
           isCountingIn={isCountingIn}
           isRecording={isRecording}
-          stylePrompt={stylePrompt}
-          onStylePromptChange={setStylePrompt}
         />
 
         <TransportBar
@@ -937,7 +1117,23 @@ function App() {
           activeStep={activeStep}
           countInBeat={countInBeat}
           detectText={detectText}
+          phaseLabel={phaseLabel}
+          phaseSummary={phaseSummary}
         />
+
+        <div className="w-full max-w-6xl grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="rounded-2xl border border-[#EFEBE1] bg-white/70 px-5 py-4 text-sm text-[#5D4037]">
+            <div className="text-xs uppercase tracking-[0.18em] text-[#8D6E63]">织谱流程</div>
+            <div className="mt-2 text-lg text-[#2D1B15]">{phaseLabel || '等待生成配器'}</div>
+            <div className="mt-1 text-sm text-[#6E5A4A]">
+              {currentPhase ? `本轮固定 4 小节试听：${currentPhaseVoiceLabels}` : '生成后会按四小节为一轮，逐轨加入箫、琵琶、古琴与鼓点。'}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-[#EFEBE1] bg-white/70 px-5 py-4 text-sm text-[#5D4037] min-w-[220px]">
+            <div className="text-xs uppercase tracking-[0.18em] text-[#8D6E63]">当前轮次</div>
+            <div className="mt-2 text-lg text-[#2D1B15]">{phaseSummary}</div>
+          </div>
+        </div>
         
         <div className="w-full overflow-x-auto pb-8 flex justify-center">
           <ScoreGrid 

@@ -70,67 +70,35 @@ async def health_check():
 
 TOTAL_STEPS = 16
 TICKS_PER_BEAT = 480
-TICKS_PER_STEP = TICKS_PER_BEAT
-POS_PER_STEP = 12
+TICKS_PER_STEP = TICKS_PER_BEAT // 4
+POS_PER_STEP = 3
 GENERATED_VOICES = ("alto", "tenor", "bass")
 DUNHUANG_TRACK_VOICES = ("xiao", "pipa", "guqin")
 PERCUSSION_VOICE = "percussion"
-ALLOWED_PITCHES = (0, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14)
-ANCHOR_PITCHES = (14, 10, 7, 4)
-CADENCE_PITCHES = (14, 10, 7)
+ALLOWED_PITCHES = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
 VOICE_TARGET_INTERVALS = {
-    "alto": -3,
-    "tenor": -8,
-    "bass": -14,
-    "xiao": -2,
-    "pipa": -7,
+    "xiao": -3,
+    "pipa": -8,
     "guqin": -14,
 }
 VOICE_PITCH_RANGES = {
-    "alto": (6, 12),
-    "tenor": (9, 13),
-    "bass": (11, 14),
-    "xiao": (5, 12),
-    "pipa": (8, 13),
+    "xiao": (6, 12),
+    "pipa": (9, 13),
     "guqin": (11, 14),
 }
-VOICE_SMOOTHING_WEIGHTS = {
-    "alto": 0.45,
-    "tenor": 0.45,
-    "bass": 0.45,
-    "xiao": 0.65,
-    "pipa": 0.3,
-    "guqin": 0.5,
-}
-RHYTHM_PATTERNS = {
-    "sparse": {
-        "xiao": (0, 4, 8, 12),
-        "pipa": (0, 2, 4, 6, 8, 10, 12, 14),
-        "guqin": (0, 4, 8, 12),
-        "percussion": (0, 4, 8, 12),
-    },
-    "steady": {
-        "xiao": tuple(range(0, TOTAL_STEPS, 2)),
-        "pipa": tuple(range(TOTAL_STEPS)),
-        "guqin": (0, 2, 4, 6, 8, 10, 12, 14),
-        "percussion": (0, 2, 4, 6, 8, 10, 12, 14),
-    },
-    "dance": {
-        "xiao": tuple(range(0, TOTAL_STEPS, 2)),
-        "pipa": tuple(range(TOTAL_STEPS)),
-        "guqin": (0, 3, 4, 7, 8, 11, 12, 15),
-        "percussion": tuple(range(TOTAL_STEPS)),
-    },
-}
 DEFAULT_CONTROLS = {
-    "style": "dunhuang",
-    "texture": "satb",
-    "rhythm_profile": "steady",
-    "dunhuang_level": 0.75,
-    "density": 0.65,
-    "bass_motion": 0.45,
-    "cadence_strength": 0.65,
+    "texture": "dunhuang_quartet",
     "percussion": False,
+}
+
+ARRANGEMENT_PHASE_LABELS = {
+    "alto": "加入高声部",
+    "tenor": "加入中声部",
+    "bass": "加入低声部",
+    "xiao": "加入箫",
+    "pipa": "加入琵琶",
+    "guqin": "加入古琴",
+    PERCUSSION_VOICE: "加入鼓点",
 }
 
 PITCH_TO_MIDI = {
@@ -155,7 +123,7 @@ PITCH_TO_MIDI = {
 def midi_to_pitch_index(midi_pitch: int) -> int:
     best_pitch_index = 14
     best_diff = float("inf")
-    for pitch_index in ALLOWED_PITCHES:
+    for pitch_index, candidate_midi in PITCH_TO_MIDI.items():
         candidate_midi = PITCH_TO_MIDI[pitch_index]
         diff = abs(midi_pitch - candidate_midi)
         if diff < best_diff:
@@ -175,98 +143,97 @@ def read_pitch_index(note) -> int:
     return midi_to_pitch_index(raw_pitch)
 
 
-def clamp01(value: Any, default: float) -> float:
-    try:
-        return max(0.0, min(1.0, float(value)))
-    except (TypeError, ValueError):
-        return default
-
-
 def normalize_controls(style_prompt: Optional[str], controls: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     normalized = dict(DEFAULT_CONTROLS)
     if controls:
         normalized.update({key: value for key, value in controls.items() if value is not None})
-
-    prompt = (style_prompt or "").lower()
     if style_prompt:
         normalized["style_prompt"] = style_prompt
-
-    dunhuang_words = ("敦煌", "dunhuang", "雅乐", "西域", "壁画", "飞天", "石窟")
-    dance_words = ("节奏", "鼓", "鼓点", "舞", "律动", "动感", "强拍", "颗粒", "dance", "drum", "rhythm")
-    sparse_words = ("空灵", "慢", "散板", "稀疏", "留白", "悠远", "sparse", "slow")
-    quartet_words = ("箫", "琵琶", "古琴", "四重奏", "配器", "音轨", "track", "instrument")
-    bass_words = ("低音", "低声部", "bass", "古琴")
-
-    if any(word in prompt for word in dunhuang_words):
-        normalized["style"] = "dunhuang"
-        normalized["dunhuang_level"] = max(clamp01(normalized.get("dunhuang_level"), 0.75), 0.85)
-        normalized["cadence_strength"] = max(clamp01(normalized.get("cadence_strength"), 0.65), 0.75)
-    if any(word in prompt for word in dance_words):
-        normalized["rhythm_profile"] = "dance"
-        normalized["density"] = max(clamp01(normalized.get("density"), 0.65), 0.75)
-    if any(word in prompt for word in sparse_words):
-        normalized["rhythm_profile"] = "sparse"
-        normalized["density"] = min(clamp01(normalized.get("density"), 0.65), 0.45)
-    if any(word in prompt for word in quartet_words):
-        normalized["texture"] = "dunhuang_quartet"
-    if any(word in prompt for word in bass_words):
-        normalized["bass_motion"] = max(clamp01(normalized.get("bass_motion"), 0.45), 0.7)
-    if "鼓" in prompt or "drum" in prompt or "percussion" in prompt:
-        normalized["percussion"] = True
-        normalized["texture"] = "dunhuang_quartet"
-
-    normalized["dunhuang_level"] = clamp01(normalized.get("dunhuang_level"), 0.75)
-    normalized["density"] = clamp01(normalized.get("density"), 0.65)
-    normalized["bass_motion"] = clamp01(normalized.get("bass_motion"), 0.45)
-    normalized["cadence_strength"] = clamp01(normalized.get("cadence_strength"), 0.65)
-    if normalized.get("rhythm_profile") not in RHYTHM_PATTERNS:
-        normalized["rhythm_profile"] = "steady"
-    if normalized.get("texture") not in ("satb", "dunhuang_quartet"):
-        normalized["texture"] = "satb"
+    normalized["texture"] = "dunhuang_quartet"
     normalized["percussion"] = bool(normalized.get("percussion"))
     return normalized
 
 
-def should_emit_step(voice: str, step: int, controls: Dict[str, Any]) -> bool:
-    pattern = RHYTHM_PATTERNS[controls["rhythm_profile"]].get(voice)
-    if pattern is None:
-        return True
-    if step in pattern:
-        return True
-    if voice == "pipa" and controls["density"] >= 0.7:
-        return True
-    if voice == "xiao" and controls["density"] >= 0.85 and step % 2 == 1:
-        return True
-    return False
-
-
-def is_strong_step(step: int) -> bool:
-    return step % 4 in (0, 2)
-
-
-def nearest_pitch_from_set(user_pitch: int, pitch_set: Tuple[int, ...], used_pitches: Set[int]) -> Optional[int]:
-    available = [pitch for pitch in pitch_set if pitch not in used_pitches and pitch != user_pitch]
-    if not available:
-        return None
-    user_midi = pitch_index_to_midi(user_pitch)
-    return min(available, key=lambda pitch: abs(pitch_index_to_midi(pitch) - user_midi))
-
-
 def controls_metadata(controls: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        "style": controls["style"],
         "texture": controls["texture"],
-        "rhythm_profile": controls["rhythm_profile"],
-        "dunhuang_level": controls["dunhuang_level"],
-        "density": controls["density"],
-        "bass_motion": controls["bass_motion"],
-        "cadence_strength": controls["cadence_strength"],
         "percussion": controls["percussion"],
         "notes": [
-            "Natural-language style_prompt is converted into structured controls before post-processing.",
-            "Museformer still receives a musical REMIGEN prefix; text is not passed directly to the model.",
+            "Museformer output is used as pitch material; simple early-stage voice allocation maps it to three visible tracks.",
+            "Natural-language style_prompt is accepted for compatibility but does not tune pitch, harmony, density, or orchestration.",
         ],
     }
+
+
+def transform_lead_notes(user_melody, controls: Optional[Dict[str, Any]] = None):
+    if not user_melody:
+        return []
+
+    lead_notes = []
+
+    for note in sorted(user_melody, key=lambda item: item.get("step", 0)):
+        step = max(0, min(TOTAL_STEPS - 1, int(round(note.get("step", 0)))))
+        duration = max(1, min(TOTAL_STEPS - step, int(round(note.get("duration", 1)))))
+        user_pitch = read_pitch_index(note)
+        lead_notes.append(
+            {
+                "id": f"lead_{step}_{user_pitch}_{random.randint(1000, 9999)}",
+                "step": step,
+                "pitch": user_pitch,
+                "duration": duration,
+                "voice": "user",
+            }
+        )
+
+    return lead_notes
+
+
+def build_arrangement_phases(
+    lead_notes,
+    generated_notes,
+    controls: Optional[Dict[str, Any]] = None,
+):
+    if not lead_notes:
+        return []
+
+    active_controls = controls or DEFAULT_CONTROLS
+    phases = []
+    generated_by_voice: Dict[str, List[Dict[str, Any]]] = {}
+    for note in generated_notes:
+        generated_by_voice.setdefault(note["voice"], []).append(note)
+
+    phase_notes = list(lead_notes)
+    phases.append(
+        {
+            "index": 1,
+            "label": "主旋律敦煌化",
+            "bars": 4,
+            "voices": ["user"],
+            "notes": phase_notes,
+        }
+    )
+
+    reveal_voices = list(DUNHUANG_TRACK_VOICES if active_controls.get("texture") == "dunhuang_quartet" else GENERATED_VOICES)
+    if active_controls.get("percussion"):
+        reveal_voices.append(PERCUSSION_VOICE)
+
+    visible_voices = ["user"]
+    for index, voice in enumerate(reveal_voices, start=2):
+        visible_voices.append(voice)
+        phase_notes = list(lead_notes)
+        for visible_voice in reveal_voices[: index - 1]:
+            phase_notes.extend(generated_by_voice.get(visible_voice, []))
+        phases.append(
+            {
+                "index": index,
+                "label": ARRANGEMENT_PHASE_LABELS.get(voice, f"加入{voice}"),
+                "bars": 4,
+                "voices": list(visible_voices),
+                "notes": phase_notes,
+            }
+        )
+
+    return phases
 
 
 def build_prompt_token_strs(melody_json):
@@ -374,15 +341,10 @@ def choose_voice_pitch(
     used_pitches: Set[int],
     previous_voice_pitch: Optional[int],
     lower_bound_midi: Optional[int],
-    controls: Optional[Dict[str, Any]] = None,
 ) -> Optional[int]:
-    active_controls = controls or DEFAULT_CONTROLS
     user_midi = pitch_index_to_midi(user_pitch)
     target_midi = user_midi + VOICE_TARGET_INTERVALS[voice]
     range_min, range_max = VOICE_PITCH_RANGES[voice]
-    dunhuang_level = clamp01(active_controls.get("dunhuang_level"), DEFAULT_CONTROLS["dunhuang_level"])
-    cadence_strength = clamp01(active_controls.get("cadence_strength"), DEFAULT_CONTROLS["cadence_strength"])
-    bass_motion = clamp01(active_controls.get("bass_motion"), DEFAULT_CONTROLS["bass_motion"])
 
     def score_pitch(pitch_index: int) -> float:
         candidate_midi = pitch_index_to_midi(pitch_index)
@@ -390,10 +352,7 @@ def choose_voice_pitch(
 
         if previous_voice_pitch is not None:
             previous_midi = pitch_index_to_midi(previous_voice_pitch)
-            motion = abs(candidate_midi - previous_midi)
-            score += motion * VOICE_SMOOTHING_WEIGHTS.get(voice, 0.45)
-            if voice in ("bass", "guqin") and motion == 0:
-                score += bass_motion * 7
+            score += abs(candidate_midi - previous_midi) * 0.45
 
         if lower_bound_midi is not None and candidate_midi <= lower_bound_midi:
             score += (lower_bound_midi - candidate_midi + 1) * 4
@@ -402,14 +361,6 @@ def choose_voice_pitch(
             score += (range_min - pitch_index) * 6
         elif pitch_index > range_max:
             score += (pitch_index - range_max) * 6
-
-        if active_controls.get("style") == "dunhuang":
-            if pitch_index in ANCHOR_PITCHES:
-                score -= 2.5 * dunhuang_level
-            if pitch_index in CADENCE_PITCHES:
-                score -= 1.5 * cadence_strength
-            if pitch_index in (4, 11):
-                score -= 2.0 * dunhuang_level
 
         return score
 
@@ -444,16 +395,17 @@ def choose_voice_pitch(
     return min(fallback_pitches, key=score_pitch)
 
 
-def arrange_harmony_notes(user_melody, step_candidates, controls: Optional[Dict[str, Any]] = None):
+def arrange_harmony_notes(user_melody, step_candidates):
     if not user_melody:
         return []
 
-    active_controls = controls or DEFAULT_CONTROLS
-    output_voices = DUNHUANG_TRACK_VOICES if active_controls.get("texture") == "dunhuang_quartet" else GENERATED_VOICES
     generated_notes = []
     previous_voice_pitches: Dict[str, Optional[int]] = {
-        voice: None for voice in set(GENERATED_VOICES + DUNHUANG_TRACK_VOICES)
+        "xiao": None,
+        "pipa": None,
+        "guqin": None,
     }
+
     for note in sorted(user_melody, key=lambda item: item.get("step", 0)):
         step = max(0, min(TOTAL_STEPS - 1, int(round(note.get("step", 0)))))
         user_pitch = read_pitch_index(note)
@@ -461,58 +413,45 @@ def arrange_harmony_notes(user_melody, step_candidates, controls: Optional[Dict[
         used_pitches = {user_pitch}
         selected_voice_pitches: Dict[str, int] = {}
 
-        bass_voice = "guqin" if active_controls.get("texture") == "dunhuang_quartet" else "bass"
-        mid_voice = "pipa" if active_controls.get("texture") == "dunhuang_quartet" else "tenor"
-        high_voice = "xiao" if active_controls.get("texture") == "dunhuang_quartet" else "alto"
-
-        bass_pitch = choose_voice_pitch(
-            bass_voice,
+        guqin_pitch = choose_voice_pitch(
+            "guqin",
             user_pitch,
             candidate_pitches,
             used_pitches,
-            previous_voice_pitches[bass_voice],
+            previous_voice_pitches["guqin"],
             lower_bound_midi=None,
-            controls=active_controls,
         )
-        if bass_pitch is not None:
-            if active_controls.get("style") == "dunhuang" and is_strong_step(step):
-                anchor_pitch = nearest_pitch_from_set(user_pitch, CADENCE_PITCHES, used_pitches)
-                if anchor_pitch is not None and random.random() < active_controls["cadence_strength"] * 0.35:
-                    bass_pitch = anchor_pitch
-            selected_voice_pitches[bass_voice] = bass_pitch
-            used_pitches.add(bass_pitch)
+        if guqin_pitch is not None:
+            selected_voice_pitches["guqin"] = guqin_pitch
+            used_pitches.add(guqin_pitch)
 
-        bass_midi = pitch_index_to_midi(bass_pitch) if bass_pitch is not None else None
-        mid_pitch = choose_voice_pitch(
-            mid_voice,
+        guqin_midi = pitch_index_to_midi(guqin_pitch) if guqin_pitch is not None else None
+        pipa_pitch = choose_voice_pitch(
+            "pipa",
             user_pitch,
             candidate_pitches,
             used_pitches,
-            previous_voice_pitches[mid_voice],
-            lower_bound_midi=bass_midi,
-            controls=active_controls,
+            previous_voice_pitches["pipa"],
+            lower_bound_midi=guqin_midi,
         )
-        if mid_pitch is not None:
-            selected_voice_pitches[mid_voice] = mid_pitch
-            used_pitches.add(mid_pitch)
+        if pipa_pitch is not None:
+            selected_voice_pitches["pipa"] = pipa_pitch
+            used_pitches.add(pipa_pitch)
 
-        mid_midi = pitch_index_to_midi(mid_pitch) if mid_pitch is not None else bass_midi
-        high_pitch = choose_voice_pitch(
-            high_voice,
+        pipa_midi = pitch_index_to_midi(pipa_pitch) if pipa_pitch is not None else guqin_midi
+        xiao_pitch = choose_voice_pitch(
+            "xiao",
             user_pitch,
             candidate_pitches,
             used_pitches,
-            previous_voice_pitches[high_voice],
-            lower_bound_midi=mid_midi,
-            controls=active_controls,
+            previous_voice_pitches["xiao"],
+            lower_bound_midi=pipa_midi,
         )
-        if high_pitch is not None:
-            selected_voice_pitches[high_voice] = high_pitch
-            used_pitches.add(high_pitch)
+        if xiao_pitch is not None:
+            selected_voice_pitches["xiao"] = xiao_pitch
+            used_pitches.add(xiao_pitch)
 
-        for voice in output_voices:
-            if not should_emit_step(voice, step, active_controls):
-                continue
+        for voice in DUNHUANG_TRACK_VOICES:
             chosen_pitch = selected_voice_pitches.get(voice)
             if chosen_pitch is None:
                 continue
@@ -524,18 +463,6 @@ def arrange_harmony_notes(user_melody, step_candidates, controls: Optional[Dict[
                     "pitch": chosen_pitch,
                     "duration": max(1, min(TOTAL_STEPS - step, int(round(note.get("duration", 1))))),
                     "voice": voice,
-                }
-            )
-
-        if active_controls.get("percussion") and should_emit_step(PERCUSSION_VOICE, step, active_controls):
-            generated_notes.append(
-                {
-                    "id": f"ai_percussion_{step}_{random.randint(1000, 9999)}",
-                    "step": step,
-                    "pitch": 10 if is_strong_step(step) else 12,
-                    "duration": 1,
-                    "voice": PERCUSSION_VOICE,
-                    "instrument": "percussion",
                 }
             )
 
@@ -595,9 +522,16 @@ async def generate_music(request: MelodyRequest):
 
     try:
         controls = normalize_controls(request.style_prompt, request.controls)
-        prompt_token_strs = build_prompt_token_strs(request.melody)
+        transformed_lead_notes = transform_lead_notes(request.melody, controls)
+        prompt_token_strs = build_prompt_token_strs(transformed_lead_notes)
         if not prompt_token_strs:
-            return {"status": "success", "generated_notes": [], "controls": controls_metadata(controls)}
+            return {
+                "status": "success",
+                "lead_notes": [],
+                "generated_notes": [],
+                "phases": [],
+                "controls": controls_metadata(controls),
+            }
 
         prompt_text = " ".join(prompt_token_strs)
         input_ids = dictionary.encode_line(
@@ -628,12 +562,14 @@ async def generate_music(request: MelodyRequest):
 
         generated_ids = results[0][0]["tokens"]
         generated_token_strs = dictionary.string(generated_ids).split()
-        step_candidates = parse_generated_pitch_candidates(generated_token_strs, len(prompt_token_strs))
-        generated_notes = arrange_harmony_notes(request.melody, step_candidates, controls)
+        generated_notes = decode_generated_notes(generated_token_strs, len(prompt_token_strs))
+        phases = build_arrangement_phases(transformed_lead_notes, generated_notes, controls)
         print(f"GPU 推理成功，返回 {len(generated_notes)} 个音符。")
         return {
             "status": "success",
+            "lead_notes": transformed_lead_notes,
             "generated_notes": generated_notes,
+            "phases": phases,
             "controls": controls_metadata(controls),
         }
     except Exception as exc:

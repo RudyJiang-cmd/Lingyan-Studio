@@ -1,0 +1,92 @@
+<svg width="390" height="844" viewBox="0 0 390 844" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg4" x1="195" y1="0" x2="195" y2="844" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FBF3DE"/>
+      <stop offset="1" stop-color="#EED39A"/>
+    </linearGradient>
+    <pattern id="grain4" width="22" height="22" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <path d="M0 0H1V22H0Z" fill="#9B6A33" fill-opacity="0.08"/>
+    </pattern>
+  </defs>
+  <rect width="390" height="844" fill="url(#bg4)"/>
+  <rect width="390" height="844" fill="url(#grain4)"/>
+  <rect x="0.5" y="0.5" width="389" height="843" stroke="#CDA66E" stroke-opacity="0.45"/>
+  <line x1="0" y1="80" x2="390" y2="80" stroke="#CDA66E" stroke-opacity="0.6"/>
+  <line x1="0" y1="764" x2="390" y2="764" stroke="#CDA66E" stroke-opacity="0.6"/>
+  <text x="195" y="36" text-anchor="middle" fill="#8A6A4F" font-size="11" letter-spacing="3">DUNHUANG ECHO</text>
+  <text x="28" y="64" fill="#4A2D1F" font-size="24" font-weight="700">织谱</text>
+  <rect x="246" y="22" rx="16" ry="16" width="94" height="30" fill="#FFF7EB" stroke="#D7B37A"/>
+  <text x="293" y="42" text-anchor="middle" fill="#7D4B2D" font-size="12">旋律正在染色</text>
+
+  <rect x="124" y="96" width="242" height="40" rx="20" fill="#FFF7EB" stroke="#D7B37A"/>
+  <circle cx="138" cy="116" r="10" fill="#8B4D24"/>
+  <text x="138" y="120" text-anchor="middle" fill="#FFF7EA" font-size="10">1</text>
+  <text x="163" y="121" fill="#5F3E2D" font-size="12">知悉</text>
+  <line x1="193" y1="116" x2="210" y2="116" stroke="#D7B37A"/>
+  <circle cx="220" cy="116" r="10" fill="#8B4D24"/>
+  <text x="220" y="120" text-anchor="middle" fill="#FFF7EA" font-size="10">2</text>
+  <text x="236" y="121" fill="#5F3E2D" font-size="12">取样</text>
+  <line x1="258" y1="116" x2="276" y2="116" stroke="#D7B37A"/>
+  <circle cx="286" cy="116" r="10" fill="#8B4D24"/>
+  <text x="286" y="120" text-anchor="middle" fill="#FFF7EA" font-size="10">3</text>
+  <text x="301" y="121" fill="#5F3E2D" font-size="12">采声</text>
+  <line x1="322" y1="116" x2="340" y2="116" stroke="#D7B37A"/>
+  <circle cx="350" cy="116" r="10" fill="#8B4D24"/>
+  <text x="350" y="120" text-anchor="middle" fill="#FFF7EA" font-size="10">4</text>
+  <text x="366" y="121" fill="#5F3E2D" font-size="12" font-weight="600">织谱</text>
+
+  <rect x="124" y="158" width="72" height="28" rx="14" fill="#7A4C2B"/>
+  <text x="160" y="177" text-anchor="middle" fill="#FFF7EA" font-size="11">织谱中</text>
+  <text x="124" y="230" fill="#4A2D1F" font-size="28" font-weight="700">旋律正在染成敦煌的颜色</text>
+  <text x="124" y="262" fill="#6F4A35" font-size="14">先听见主旋律，再看配器一行一行长出来。</text>
+
+  <rect x="124" y="296" width="242" height="82" rx="10" fill="#FFF8EE" stroke="#D8BD8D"/>
+  <text x="143" y="324" fill="#7C583F" font-size="13">你的旋律</text>
+  <text x="342" y="324" text-anchor="end" fill="#4A2D1F" font-size="13" font-weight="600">7/16</text>
+  <g>
+    <rect x="138" y="344" width="14" height="10" rx="5" fill="#8B4D24"/>
+    <rect x="154" y="344" width="14" height="10" rx="5" fill="#8B4D24"/>
+    <rect x="170" y="344" width="14" height="10" rx="5" fill="#8B4D24"/>
+    <rect x="186" y="344" width="14" height="10" rx="5" fill="#8B4D24"/>
+    <rect x="202" y="344" width="14" height="10" rx="5" fill="#8B4D24"/>
+    <rect x="218" y="344" width="14" height="10" rx="5" fill="#D9C09B"/>
+    <rect x="234" y="344" width="14" height="10" rx="5" fill="#D9C09B"/>
+    <rect x="250" y="344" width="14" height="10" rx="5" fill="#D9C09B"/>
+    <rect x="266" y="344" width="14" height="10" rx="5" fill="#D9C09B"/>
+    <rect x="282" y="344" width="14" height="10" rx="5" fill="#D9C09B"/>
+    <rect x="298" y="344" width="14" height="10" rx="5" fill="#D9C09B"/>
+    <rect x="314" y="344" width="14" height="10" rx="5" fill="#D9C09B"/>
+  </g>
+
+  <rect x="124" y="394" width="242" height="92" rx="10" fill="#FFF9F0" stroke="#D8BD8D"/>
+  <text x="136" y="418" fill="#866448" font-size="11">主旋律</text>
+  <text x="324" y="418" text-anchor="end" fill="#866448" font-size="11">逐轨加入</text>
+  <rect x="136" y="430" width="220" height="38" rx="4" fill="#FBF4E7" stroke="#E5CFAA"/>
+  <line x1="136" y1="440" x2="356" y2="440" stroke="#D6BE96"/>
+  <line x1="136" y1="452" x2="356" y2="452" stroke="#D6BE96"/>
+  <circle cx="160" cy="442" r="6" fill="#4A2D1F"/>
+  <circle cx="182" cy="452" r="6" fill="#4A2D1F"/>
+  <circle cx="206" cy="446" r="6" fill="#4A2D1F"/>
+  <circle cx="230" cy="436" r="6" fill="#4A2D1F"/>
+  <circle cx="254" cy="448" r="6" fill="#4A2D1F"/>
+  <circle cx="278" cy="442" r="6" fill="#4A2D1F"/>
+  <circle cx="302" cy="438" r="6" fill="#4A2D1F"/>
+
+  <rect x="124" y="500" width="242" height="92" rx="10" fill="#FFF9F0" stroke="#D8BD8D"/>
+  <text x="136" y="524" fill="#866448" font-size="11">箫</text>
+  <text x="324" y="524" text-anchor="end" fill="#866448" font-size="11">逐轨加入</text>
+  <rect x="136" y="536" width="220" height="38" rx="4" fill="#FBF4E7" stroke="#E5CFAA"/>
+  <line x1="136" y1="546" x2="356" y2="546" stroke="#D6BE96"/>
+  <line x1="136" y1="558" x2="356" y2="558" stroke="#D6BE96"/>
+  <circle cx="158" cy="548" r="6" fill="#8F4D24"/>
+  <circle cx="184" cy="558" r="6" fill="#8F4D24"/>
+  <circle cx="206" cy="552" r="6" fill="#8F4D24"/>
+  <circle cx="228" cy="544" r="6" fill="#8F4D24"/>
+
+  <rect x="19" y="626" width="114" height="50" rx="8" fill="#FFF7EB" stroke="#CDA66E"/>
+  <text x="76" y="657" text-anchor="middle" fill="#6D3F27" font-size="14" font-weight="600">重新哼唱</text>
+  <rect x="143" y="626" width="102" height="50" rx="8" fill="#FFF7EB" stroke="#CDA66E"/>
+  <text x="194" y="657" text-anchor="middle" fill="#6D3F27" font-size="14" font-weight="600">重新计算</text>
+  <rect x="257" y="626" width="114" height="50" rx="8" fill="#4A2D1F"/>
+  <text x="314" y="657" text-anchor="middle" fill="#FFF8EF" font-size="14" font-weight="600">继续</text>
+</svg>

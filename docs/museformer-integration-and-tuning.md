@@ -349,18 +349,15 @@ Museformer 原始输出不是可以直接展示给用户的完整 SATB 和声，
 - 迁移范围：仅前端 Nginx 静态站点；Museformer 模型后端仍保持当前独立 GPU/推理服务地址。
 - 风险控制：旧服务器暂不销毁，等待新服务器部署验证通过并获得明确确认后再处理。
 
-## 15. 2026-05-04 自然语言中介层与敦煌风格控制 V0
+## 15. 2026-05-04 自然语言中介层与敦煌风格控制 V0（已回退）
 
-本轮没有训练新模型，也没有把中文提示词直接塞进 Museformer。当前实现的是一层可控的中介协议：
+2026-05-06 已按听感反馈回退这层人工调教。当前线上后端保留 `style_prompt` / `controls` 字段兼容性，但不再用自然语言或结构化参数改写音高、和声、密度、低音运动和终止式。现在的路径是：
 
 1. 前端把玩家主旋律继续发送为 `melody`。
-2. 前端新增发送 `style_prompt`，默认文案是“更有敦煌风格，节奏更清楚，像箫、琵琶、古琴逐轨织出来”。
-3. 前端同时发送基础结构化控制：
-   - `style: dunhuang`
-   - `texture: dunhuang_quartet`
-4. 后端 `normalize_controls(...)` 会把自然语言关键词翻译成结构化控制参数。
-5. Museformer 仍然只接收主旋律转换出的 REMIGEN 音乐 token。
-6. 模型输出 token 后，后处理根据结构化控制把候选音高分配为敦煌轨道。
+2. 后端把主旋律转换为 REMIGEN 音乐 token。
+3. Museformer 基于主旋律前缀直接续写。
+4. 后端直接解码 Museformer 生成 token。
+5. 后处理只负责把模型生成的前三个 instrument 映射为 `xiao / pipa / guqin`，用于移动端逐轨展示。
 
 ### 15.1 新增请求协议
 
@@ -369,29 +366,22 @@ Museformer 原始输出不是可以直接展示给用户的完整 SATB 和声，
   "melody": [
     { "step": 0, "pitch": 14, "duration": 2 }
   ],
-  "style_prompt": "更敦煌一点，节奏更强，加鼓点，低音要动起来，像箫琵琶古琴",
+  "style_prompt": "敦煌四重奏，使用箫、琵琶、古琴，保持主旋律清晰",
   "controls": {
-    "style": "dunhuang",
     "texture": "dunhuang_quartet"
   }
 }
 ```
 
-返回值会继续包含 `generated_notes`，并额外返回后端实际使用的 `controls`，便于调试：
+返回值会继续包含 `generated_notes`，并额外返回后端实际使用的兼容性 `controls`：
 
 ```json
 {
   "status": "success",
   "generated_notes": [],
   "controls": {
-    "style": "dunhuang",
     "texture": "dunhuang_quartet",
-    "rhythm_profile": "dance",
-    "dunhuang_level": 0.85,
-    "density": 0.75,
-    "bass_motion": 0.7,
-    "cadence_strength": 0.75,
-    "percussion": true
+    "percussion": false
   }
 }
 ```
@@ -400,23 +390,16 @@ Museformer 原始输出不是可以直接展示给用户的完整 SATB 和声，
 
 这里必须保持口径清楚：
 
-- `style_prompt` 是给后端规则层读的，不是给 Museformer 直接读的。
+- `style_prompt` 当前只为协议兼容保留，不再驱动后端规则层。
 - Museformer 仍然基于主旋律音乐 token 做续写。
-- 自然语言只负责影响后处理目标，例如节奏密度、低音运动、是否输出打击乐轨道。
-
-这条路线适合当前比赛原型阶段，因为它能快速把“更敦煌”“节奏更强”“加鼓点”这类自然语言落到可执行规则上。
+- 后处理只做声部命名和移动端展示映射，不再做敦煌锚点、终止式、密度和低音运动调教。
 
 ### 15.3 后端控制参数
 
 | 参数 | 作用 |
 | --- | --- |
-| `style` | 当前主要支持 `dunhuang`，用于强化敦煌音阶锚点和 #4 色彩。 |
-| `texture` | `satb` 保持旧 alto / tenor / bass；`dunhuang_quartet` 输出 xiao / pipa / guqin。 |
-| `rhythm_profile` | `sparse` / `steady` / `dance` 三档节奏型。 |
-| `density` | 控制中高声部是否更密集。 |
-| `bass_motion` | 给低声部连续重复加惩罚，让古琴/低音更愿意移动。 |
-| `cadence_strength` | 强化强拍、终止和稳定落点。 |
-| `percussion` | 开启后额外输出 `percussion` 轨道，当前是规则鼓点，不走 Museformer。 |
+| `texture` | 当前固定为 `dunhuang_quartet`，用于把模型生成声部映射为 xiao / pipa / guqin。 |
+| `percussion` | 当前保留字段，但默认关闭，不再生成规则鼓点。 |
 
 ### 15.4 新增输出声部
 
@@ -451,7 +434,7 @@ Museformer 原始输出不是可以直接展示给用户的完整 SATB 和声，
 
 ### 15.6 给音乐同事的调试方法
 
-非编程同事可以先通过前端“风格控制”输入框试这些话术：
+非编程同事可以先通过 Codex 或直接请求后端试这些话术：
 
 - `更敦煌一点，节奏更清楚，像箫、琵琶、古琴逐轨织出来`
 - `更有节奏，加鼓点，低音要动起来`

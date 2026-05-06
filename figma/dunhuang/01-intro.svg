@@ -1,0 +1,63 @@
+<svg width="390" height="844" viewBox="0 0 390 844" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="195" y1="0" x2="195" y2="844" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FBF3DE"/>
+      <stop offset="1" stop-color="#EED39A"/>
+    </linearGradient>
+    <pattern id="grain" width="22" height="22" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <path d="M0 0H1V22H0Z" fill="#9B6A33" fill-opacity="0.08"/>
+    </pattern>
+  </defs>
+  <rect width="390" height="844" fill="url(#bg)"/>
+  <rect width="390" height="844" fill="url(#grain)"/>
+  <rect x="0.5" y="0.5" width="389" height="843" stroke="#CDA66E" stroke-opacity="0.45"/>
+  <line x1="0" y1="80" x2="390" y2="80" stroke="#CDA66E" stroke-opacity="0.6"/>
+  <line x1="0" y1="764" x2="390" y2="764" stroke="#CDA66E" stroke-opacity="0.6"/>
+
+  <text x="195" y="36" text-anchor="middle" fill="#8A6A4F" font-size="11" letter-spacing="3">DUNHUANG ECHO</text>
+  <text x="28" y="64" fill="#4A2D1F" font-size="24" font-weight="700">知悉</text>
+  <rect x="260" y="22" rx="16" ry="16" width="86" height="30" fill="#FFF7EB" stroke="#D7B37A"/>
+  <text x="303" y="42" text-anchor="middle" fill="#7D4B2D" font-size="12">先确认规则</text>
+
+  <rect x="124" y="96" width="142" height="40" rx="20" fill="#FFF7EB" stroke="#D7B37A"/>
+  <circle cx="138" cy="116" r="10" fill="#8B4D24"/>
+  <text x="138" y="120" text-anchor="middle" fill="#FFF7EA" font-size="10">1</text>
+  <text x="163" y="121" fill="#5F3E2D" font-size="12" font-weight="600">知悉</text>
+  <line x1="195" y1="116" x2="214" y2="116" stroke="#D7B37A"/>
+  <circle cx="224" cy="116" r="10" fill="white" stroke="#D7B37A"/>
+  <text x="224" y="120" text-anchor="middle" fill="#8F6A4D" font-size="10">2</text>
+  <text x="240" y="121" fill="#8F6A4D" font-size="12">取样</text>
+  <line x1="262" y1="116" x2="280" y2="116" stroke="#D7B37A"/>
+  <circle cx="290" cy="116" r="10" fill="white" stroke="#D7B37A"/>
+  <text x="290" y="120" text-anchor="middle" fill="#8F6A4D" font-size="10">3</text>
+  <text x="305" y="121" fill="#8F6A4D" font-size="12">采声</text>
+  <line x1="326" y1="116" x2="344" y2="116" stroke="#D7B37A"/>
+  <circle cx="354" cy="116" r="10" fill="white" stroke="#D7B37A"/>
+  <text x="354" y="120" text-anchor="middle" fill="#8F6A4D" font-size="10">4</text>
+  <text x="369" y="121" fill="#8F6A4D" font-size="12">织谱</text>
+
+  <rect x="124" y="158" width="76" height="28" rx="14" fill="#7A4C2B"/>
+  <text x="162" y="177" text-anchor="middle" fill="#FFF7EA" font-size="11">敦煌风移动端体验</text>
+  <text x="124" y="230" fill="#4A2D1F" font-size="32" font-weight="700">敦煌回声</text>
+  <text x="124" y="262" fill="#6F4A35" font-size="14">把一段旋律，织成四重奏的沙与光。</text>
+
+  <rect x="124" y="296" width="242" height="90" rx="10" fill="#FFF8EE" stroke="#D8BD8D"/>
+  <circle cx="147" cy="331" r="15" fill="#8B4D24"/>
+  <path d="M143 331V325L149 327V339C149 341.2 147.2 343 145 343C142.8 343 141 341.2 141 339C141 336.8 142.8 335 145 335C146 335 146.8 335.2 147 335.4V331Z" fill="white"/>
+  <text x="171" y="324" fill="#5F3E2D" font-size="13">体验会播放声音，并在结束后进入问卷。</text>
+  <text x="171" y="348" fill="#5F3E2D" font-size="13">你的操作步骤会被记录，用来完成后面的反馈整理。</text>
+
+  <rect x="124" y="408" width="242" height="90" rx="10" fill="#FFF8EE" stroke="#D8BD8D"/>
+  <circle cx="147" cy="443" r="15" fill="#8B4D24"/>
+  <path d="M141 443C141 438.6 144.6 435 149 435C153.4 435 157 438.6 157 443C157 447.4 153.4 451 149 451C144.6 451 141 447.4 141 443Z" fill="white"/>
+  <path d="M145 442H153" stroke="#8B4D24" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M149 438V448" stroke="#8B4D24" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="171" y="436" fill="#5F3E2D" font-size="13">你可以哼唱，也可以直接选一段预设旋律。</text>
+  <text x="171" y="460" fill="#5F3E2D" font-size="13">后面会把旋律逐轨展开成四重奏。</text>
+
+  <rect x="19" y="626" width="352" height="50" rx="8" fill="#4A2D1F"/>
+  <rect x="166" y="641" width="12" height="12" rx="2" fill="none" stroke="#FFF8EF" stroke-width="1.5"/>
+  <path d="M169 647L171.5 649.5L177 644" stroke="#FFF8EF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="195" y="657" text-anchor="middle" fill="#FFF8EF" font-size="14" font-weight="600">我已知悉，开始体验</text>
+  <text x="195" y="706" text-anchor="middle" fill="#8B6A53" font-size="11">建议在可播放声音的环境中使用</text>
+</svg>

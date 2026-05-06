@@ -295,7 +295,7 @@ flowchart TD
 
 <callout emoji="✅" background-color="light-green" border-color="green">
   <h2>当前新增能力</h2>
-  <p>现在已经不是只能固定生成 alto / tenor / bass。前端新增“风格控制”输入框，后端新增 <code>style_prompt</code> 和 <code>controls</code> 协议，可以把“更敦煌一点、节奏更强、加鼓点、像箫琵琶古琴”这类自然语言翻译为结构化音乐控制。</p>
+  <p>现在已经不是只能固定生成 alto / tenor / bass。后端新增 <code>style_prompt</code> 和 <code>controls</code> 协议，内部调试请求可以把“更敦煌一点、节奏更强、加鼓点、像箫琵琶古琴”这类自然语言翻译为结构化音乐控制。</p>
 </callout>
 
 <whiteboard type="mermaid">

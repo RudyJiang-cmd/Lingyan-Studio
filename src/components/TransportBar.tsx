@@ -14,9 +14,11 @@ type TransportBarProps = {
   activeStep: number | null;
   countInBeat: number | null;
   detectText?: string;
+  phaseLabel?: string;
+  phaseSummary?: string;
 };
 
-const TransportBar: React.FC<TransportBarProps> = ({ mode, totalSteps, activeStep, countInBeat, detectText }) => {
+const TransportBar: React.FC<TransportBarProps> = ({ mode, totalSteps, activeStep, countInBeat, detectText, phaseLabel, phaseSummary }) => {
   const label =
     mode === 'countin' ? '预备拍' : mode === 'recording' ? '录入中' : mode === 'playing' ? '播放中' : '空闲';
 
@@ -63,8 +65,8 @@ const TransportBar: React.FC<TransportBarProps> = ({ mode, totalSteps, activeSte
           })}
         </div>
 
-        <div className="text-xs text-[#8D6E63] min-w-[120px] text-right" style={{ fontFamily: 'Georgia, serif' }}>
-          {mode === 'recording' ? detectText : ''}
+        <div className="text-xs text-[#8D6E63] min-w-[180px] text-right" style={{ fontFamily: 'Georgia, serif' }}>
+          {mode === 'recording' ? detectText : mode === 'playing' ? (phaseLabel || phaseSummary || '') : ''}
         </div>
       </div>
     </div>
