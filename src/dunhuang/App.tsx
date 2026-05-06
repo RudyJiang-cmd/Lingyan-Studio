@@ -831,8 +831,8 @@ function ScoreLane({
                 lineHeight: '1',
                 fontFamily: '"Noto Music", Georgia, serif',
                 opacity: 0.96,
-                transform: 'translateY(-7px) scale(1.25)',
-                transformOrigin: 'top center',
+                transform: 'scale(0.75)',
+                transformOrigin: 'center center',
               }}
             >
               𝄞
@@ -1269,15 +1269,19 @@ export default function App() {
   const startComposeGeneration = async (inputNotes: Array<number | null>) => {
     setIsCheckingBackend(true);
     setGenerationError('');
+    enterCompose();
+    setLeaderNotes(inputNotes);
+    setGeneratedTrackNotes({});
+    const leaderOnlyTracks = buildTrackLibrary(inputNotes, {});
+    trackLibraryRef.current = leaderOnlyTracks;
+    setTracks([leaderOnlyTracks[0]]);
+    setActiveTrackCount(1);
+    setPlayhead(0);
     try {
       await checkBackendReady();
     } catch (error) {
       const message = error instanceof Error ? error.message : '后端连接失败';
       setGenerationError(`后端连接失败：${message}`);
-      setCaptureStarted(false);
-      setCapturePhase('idle');
-      setPlayhead(0);
-      setActiveTrackCount(1);
       return;
     } finally {
       setIsCheckingBackend(false);
@@ -1285,14 +1289,7 @@ export default function App() {
 
     generationRequestId.current += 1;
     const requestId = generationRequestId.current;
-    const leaderOnlyTracks = buildTrackLibrary(inputNotes, {});
-    trackLibraryRef.current = leaderOnlyTracks;
-    setTracks([leaderOnlyTracks[0]]);
-    setActiveTrackCount(1);
-    setPlayhead(0);
-    setGeneratedTrackNotes({});
     setGenerationError('');
-    enterCompose();
     void generateArrangement(inputNotes, requestId);
   };
 
