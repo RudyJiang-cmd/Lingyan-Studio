@@ -1,14 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
   ChevronRight,
-  Mic,
   Music4,
-  Play,
   RotateCcw,
   Sparkles,
-  SquareCheckBig,
   Volume2,
 } from 'lucide-react';
 
@@ -103,15 +100,6 @@ const stageLabel: Record<Stage, string> = {
   compose: '织谱',
   survey: '回声',
   done: '完成',
-};
-
-const stageHint: Record<Stage, string> = {
-  intro: '先确认规则',
-  input: '选一种进入方式',
-  capture: '收下你的旋律',
-  compose: '逐轨展开成四重奏',
-  survey: '给一点真实反馈',
-  done: '谢谢你完成体验',
 };
 
 const motionEase = [0.22, 1, 0.36, 1] as const;
@@ -1055,12 +1043,12 @@ export default function App() {
   const preset = useMemo(() => PRESETS.find((item) => item.id === presetId) ?? PRESETS[0], [presetId]);
   const arrangementReady = trackLibrary.length >= 4 && !generationError;
 
-  const clearTimers = () => {
+  const clearTimers = useCallback(() => {
     timers.current.forEach((id) => window.clearTimeout(id));
     timers.current = [];
     intervals.current.forEach((id) => window.clearInterval(id));
     intervals.current = [];
-  };
+  }, []);
 
   const stopMicCapture = () => {
     mediaStream.current?.getTracks().forEach((track) => track.stop());
@@ -1092,12 +1080,12 @@ export default function App() {
     oscillator.stop(ctx.currentTime + duration + 0.02);
   };
 
-  const resetCompose = () => {
+  const resetCompose = useCallback(() => {
     clearTimers();
     setTracks([trackLibrary[0]]);
     setActiveTrackCount(1);
     setPlayhead(0);
-  };
+  }, [clearTimers, trackLibrary]);
 
   const restartFlow = () => {
     generationRequestId.current += 1;
@@ -1122,7 +1110,7 @@ export default function App() {
       stopMicCapture();
       audioCtx.current?.close();
     };
-  }, []);
+  }, [clearTimers]);
 
   useEffect(() => {
     trackLibraryRef.current = trackLibrary;
@@ -1169,18 +1157,7 @@ export default function App() {
       clearTimers();
       setPlayhead(0);
     };
-  }, [stage, composeRun]);
-
-  const enterCapture = () => {
-    clearTimers();
-    setCaptureStarted(false);
-    setCapturePhase('idle');
-    setRecordProgress(0);
-    setRecordBeat(0);
-    setCountdown(4);
-    setDetectedPitch('待识别');
-    setStage('capture');
-  };
+  }, [clearTimers, stage, composeRun, resetCompose]);
 
   const enterCaptureAndBegin = async (mode: InputMode) => {
     clearTimers();
