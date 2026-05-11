@@ -92,19 +92,19 @@ const VOICE_SYNTHS: Record<Voice, {
   },
   pipa: {
     type: 'triangle',
-    gain: 0.1,
-    attack: 0.01,
-    release: 0.06,
+    gain: 0.09,
+    attack: 0.008,
+    release: 0.05,
     transpose: -12,
     pan: 0.05,
   },
   guqin: {
-    type: 'square',
-    gain: 0.08,
-    attack: 0.03,
-    release: 0.14,
+    type: 'triangle',
+    gain: 0.07,
+    attack: 0.008,
+    release: 0.11,
     transpose: -24,
-    pan: 0.3,
+    pan: 0.28,
   },
   percussion: {
     type: 'square',
@@ -230,6 +230,8 @@ const LEGACY_GENERATED_VOICE_MAP: Record<string, Voice> = {
   xiao: 'xiao',
   pipa: 'pipa',
   guqin: 'guqin',
+  dutar: 'guqin',
+  'dutar-bass': 'guqin',
   percussion: 'percussion',
   user: 'user',
 };
@@ -237,13 +239,13 @@ const LEGACY_GENERATED_VOICE_MAP: Record<string, Voice> = {
 const VOICE_REVEAL_ORDER: Voice[] = ['xiao', 'pipa', 'guqin', 'percussion'];
 
 const VOICE_LABELS: Record<Voice, string> = {
-  user: '主旋律',
+  user: '笛子主旋律',
   alto: '高声部',
   tenor: '中声部',
   bass: '低声部',
   xiao: '箫',
   pipa: '琵琶',
-  guqin: '古琴',
+  guqin: '都塔尔低音',
   percussion: '鼓点',
 };
 
@@ -253,7 +255,7 @@ const PHASE_LABELS: Record<string, string> = {
   bass: '加入低声部',
   xiao: '加入箫',
   pipa: '加入琵琶',
-  guqin: '加入古琴',
+  guqin: '加入都塔尔低音',
   percussion: '加入鼓点',
 };
 
@@ -455,12 +457,19 @@ const scheduleNotePlayback = (
   const noteEndTime = noteStartTime + (note.duration ?? 1) * tickDuration;
 
   const osc = ctx.createOscillator();
+  const overtoneOsc = ctx.createOscillator();
+  const filter = ctx.createBiquadFilter();
   const gainNode = ctx.createGain();
   const outputNode =
     typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
 
   osc.type = synth.type;
+  overtoneOsc.type = synth.type === 'sine' ? 'triangle' : 'sawtooth';
   osc.frequency.setValueAtTime(freq, noteStartTime);
+  overtoneOsc.frequency.setValueAtTime(freq * 2.01, noteStartTime);
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(Math.max(900, freq * 4.2), noteStartTime);
+  filter.Q.value = 0.9;
 
   gainNode.gain.setValueAtTime(0, noteStartTime);
   gainNode.gain.linearRampToValueAtTime(synth.gain, noteStartTime + synth.attack);
@@ -470,7 +479,9 @@ const scheduleNotePlayback = (
   );
   gainNode.gain.linearRampToValueAtTime(0, noteEndTime);
 
-  osc.connect(gainNode);
+  osc.connect(filter);
+  overtoneOsc.connect(filter);
+  filter.connect(gainNode);
   if (outputNode) {
     outputNode.pan.setValueAtTime(synth.pan, noteStartTime);
     gainNode.connect(outputNode);
@@ -480,7 +491,9 @@ const scheduleNotePlayback = (
   }
 
   osc.start(noteStartTime);
+  overtoneOsc.start(noteStartTime);
   osc.stop(noteEndTime);
+  overtoneOsc.stop(noteEndTime);
 };
 
 const formatAiErrorMessage = (error: unknown) => {
@@ -1126,7 +1139,7 @@ function App() {
             <div className="text-xs uppercase tracking-[0.18em] text-[#8D6E63]">织谱流程</div>
             <div className="mt-2 text-lg text-[#2D1B15]">{phaseLabel || '等待生成配器'}</div>
             <div className="mt-1 text-sm text-[#6E5A4A]">
-              {currentPhase ? `本轮固定 4 小节试听：${currentPhaseVoiceLabels}` : '生成后会按四小节为一轮，逐轨加入箫、琵琶、古琴与鼓点。'}
+              {currentPhase ? `本轮固定 4 小节试听：${currentPhaseVoiceLabels}` : '生成后会按四小节为一轮，逐轨加入箫、琵琶、都塔尔低音与鼓点。'}
             </div>
           </div>
           <div className="rounded-2xl border border-[#EFEBE1] bg-white/70 px-5 py-4 text-sm text-[#5D4037] min-w-[220px]">

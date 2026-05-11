@@ -81,8 +81,8 @@ const ControlBar: React.FC<ControlBarProps> = ({
       
       <div className="flex items-center gap-4 text-sm" style={{ fontFamily: 'Georgia, serif' }}>
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full bg-[#2D1B15] shadow-sm" />
-          <span className="text-[#5D4037]">主旋律</span>
+          <div className="w-3 h-3 rounded-full bg-[#6F3F1F] shadow-sm" />
+          <span className="text-[#5D4037]">笛子主旋律</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded-full bg-[#8F4D24] shadow-sm" />
@@ -94,7 +94,7 @@ const ControlBar: React.FC<ControlBarProps> = ({
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded-full bg-[#2F4D52] shadow-sm" />
-          <span className="text-[#5D4037]">古琴</span>
+          <span className="text-[#5D4037]">都塔尔低音</span>
         </div>
       </div>
 

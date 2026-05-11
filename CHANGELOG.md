@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-11
+
+- Added preset-specific melodic content for `兰花草`, `沂蒙山小调`, and the third preset branch, with updated simplified-notation mappings.
+- Tuned the Dunhuang quartet playback stack: repeated voice grouping, rhythm quantization for the fourth voice, stronger post-processing consonance checks, and revised voice balances.
+- Improved the mobile score view and audio handling: count-in expanded to 8 beats with standard A reference tone, audio context resume on focus/visibility return, and revised note rendering behavior.
+- Removed the temporary mode-label display from the lead track after testing.
+- Updated backend generation constraints and deployed the Museformer API changes to the remote server.
+
 ## 2026-05-05
 
 - Replaced the public site entry with the new mobile-first Dunhuang interaction flow.

@@ -71,20 +71,23 @@ type BackendHealthResponse = {
 
 const PRESETS: Preset[] = [
   { id: 'molihua', name: '茉莉花', tone: '温柔、清亮、最容易上手' },
-  { id: 'changzhongguo', name: '歌唱祖国', tone: '庄重、舒展、适合试配器' },
-  { id: 'xuanzu', name: '最炫民族风', tone: '明快、热烈、节奏感更强' },
+  { id: 'lanhuacao', name: '兰花草', tone: '轻柔、明亮、带一点民歌感' },
+  { id: 'xuanzu', name: '沂蒙山小调', tone: '明快、热烈、节奏感更强' },
 ];
 
-const DEFAULT_LEADER_NOTES = [14, 13, 12, 10, 9, 10, 12, 13, 14, 13, 12, 10, 9, 10, 12, 13];
+const DEFAULT_LEADER_NOTES = [9, 9, 8, 8, 7, 7, 8, null, 9, 9, 8, 8, 7, 5, 8, null];
+const MOLIHUA_LEADER_NOTES = [5, 6, 5, 3, 2, 3, 0, 2, 3, null, 3, 2, 3, null, null, null];
+const LANHUACAO_LEADER_NOTES = [9, 5, 5, 5, 5, null, null, 6, 7, 6, 7, 8, 9, null, null, null];
+const XUANZU_LEADER_NOTES = [6, null, 3, null, 5, 6, 5, null, 3, 5, 6, 7, 6, null, null, null];
 
 const buildTrackLibrary = (
   leaderNotes: Array<number | null>,
   generatedTracks: Partial<Record<TrackVoice, Array<number | null>>> = {}
 ): Track[] => [
-  { id: 'leader', label: '主旋律', color: '#4a2d1f', voice: 'user', notes: leaderNotes },
-  ...(generatedTracks.xiao ? [{ id: 'lead', label: '箫', color: '#8f4d24', voice: 'xiao' as TrackVoice, notes: generatedTracks.xiao }] : []),
-  ...(generatedTracks.pipa ? [{ id: 'middle', label: '琵琶', color: '#9b6b2a', voice: 'pipa' as TrackVoice, notes: generatedTracks.pipa }] : []),
-  ...(generatedTracks.guqin ? [{ id: 'low', label: '古琴', color: '#2f4d52', voice: 'guqin' as TrackVoice, notes: generatedTracks.guqin }] : []),
+  { id: 'leader', label: '笛子主旋律', color: '#6f3f1f', voice: 'user', notes: leaderNotes },
+  ...(generatedTracks.xiao ? [{ id: 'lead', label: '箫织体', color: '#8f4d24', voice: 'xiao' as TrackVoice, notes: generatedTracks.xiao }] : []),
+  ...(generatedTracks.pipa ? [{ id: 'middle', label: '琵琶织体', color: '#9b6b2a', voice: 'pipa' as TrackVoice, notes: generatedTracks.pipa }] : []),
+  ...(generatedTracks.guqin ? [{ id: 'low', label: '都塔尔踏板', color: '#2f4d52', voice: 'guqin' as TrackVoice, notes: generatedTracks.guqin }] : []),
 ];
 
 const surveyItems = [
@@ -121,13 +124,13 @@ const buttonBase =
 
 const introPresets = [
   '使用 茉莉花 作为预设',
-  '使用 茉莉花 作为预设',
-  '使用 茉莉花 作为预设',
+  '使用 兰花草 作为预设',
+  '使用 沂蒙山小调 作为预设',
 ];
 
 const CAPTURE_BPM = 160;
 const CAPTURE_BEAT_MS = (60_000 / CAPTURE_BPM);
-const CAPTURE_COUNT_IN_BEATS = 4;
+const CAPTURE_COUNT_IN_BEATS = 8;
 const CAPTURE_BARS = 4;
 const CAPTURE_BEATS_PER_BAR = 4;
 const CAPTURE_TOTAL_BEATS = CAPTURE_BARS * CAPTURE_BEATS_PER_BAR;
@@ -163,33 +166,33 @@ const ALLOWED_PITCHES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 const TRACK_SYNTHS: Record<TrackVoice, TrackSynth> = {
   user: {
     type: 'triangle',
-    gain: 0.18,
-    attack: 0.02,
-    release: 0.08,
+    gain: 0.2,
+    attack: 0.012,
+    release: 0.12,
     transpose: -12,
     pan: -0.15,
   },
   xiao: {
-    type: 'sine',
-    gain: 0.13,
-    attack: 0.02,
-    release: 0.09,
+    type: 'triangle',
+    gain: 0.1,
+    attack: 0.018,
+    release: 0.11,
     transpose: 0,
     pan: -0.25,
   },
   pipa: {
-    type: 'triangle',
-    gain: 0.1,
-    attack: 0.01,
-    release: 0.06,
+    type: 'sawtooth',
+    gain: 0.12,
+    attack: 0.006,
+    release: 0.045,
     transpose: -12,
     pan: 0.05,
   },
   guqin: {
-    type: 'square',
-    gain: 0.07,
-    attack: 0.03,
-    release: 0.14,
+    type: 'sine',
+    gain: 0.14,
+    attack: 0.01,
+    release: 0.16,
     transpose: -24,
     pan: 0.3,
   },
@@ -199,7 +202,7 @@ const getComposeTitle = (trackCount: number) => {
   if (trackCount <= 1) return '正在勾勒西域旋律';
   if (trackCount === 2) return '箫声入场';
   if (trackCount === 3) return '琵琶加入乐队';
-  return '古琴已经完成和声';
+  return '都塔尔低音已经完成和声';
 };
 
 const getCountInProgress = (phase: CapturePhase, countdown: number) => {
@@ -443,6 +446,8 @@ const backendNotesToTrackNotes = (notes: BackendNote[], voice: TrackVoice) => {
     xiao: 'xiao',
     pipa: 'pipa',
     guqin: 'guqin',
+    dutar: 'guqin',
+    'dutar-bass': 'guqin',
     user: 'user',
   };
   const trackNotes: Array<number | null> = Array.from({ length: CAPTURE_TOTAL_BEATS }, () => null);
@@ -453,6 +458,66 @@ const backendNotesToTrackNotes = (notes: BackendNote[], voice: TrackVoice) => {
       trackNotes[step] = snapToDunhuangPitch(Math.round(note.pitch));
     });
   return trackNotes;
+};
+
+const GUQIN_RHYTHM_GROUPS: Array<[number, number]> = [
+  [0, 3],
+  [3, 3],
+  [6, 2],
+  [8, 3],
+  [11, 3],
+  [14, 2],
+];
+
+const quantizeGuqinRhythm = (
+  notes: Array<number | null>,
+  leaderNotes: Array<number | null> = []
+) => {
+  const quantized = Array.from({ length: CAPTURE_TOTAL_BEATS }, () => null as number | null);
+  const sourcePitchByGroup = new Map<number, number>();
+
+  GUQIN_RHYTHM_GROUPS.forEach(([start, duration]) => {
+    let chosenPitch: number | null = null;
+    for (let step = start; step < Math.min(CAPTURE_TOTAL_BEATS, start + duration); step += 1) {
+      const note = notes[step];
+      if (note !== null && note !== undefined) {
+        chosenPitch = note;
+        break;
+      }
+    }
+    if (chosenPitch === null) {
+      const leaderNote = leaderNotes[start];
+      if (leaderNote !== null && leaderNote !== undefined) {
+        chosenPitch = snapToDunhuangPitch(leaderNote + 9);
+      }
+    }
+    if (chosenPitch === null) {
+      const previousPitches = [...sourcePitchByGroup.values()];
+      const previousPitch = previousPitches[previousPitches.length - 1];
+      if (previousPitch !== undefined) {
+        chosenPitch = previousPitch;
+      }
+    }
+    if (chosenPitch === null) return;
+    sourcePitchByGroup.set(start, chosenPitch);
+    for (let step = start; step < Math.min(CAPTURE_TOTAL_BEATS, start + duration); step += 1) {
+      quantized[step] = chosenPitch;
+    }
+  });
+
+  for (let step = 0; step < CAPTURE_TOTAL_BEATS; step += 1) {
+    if (quantized[step] !== null) continue;
+    const group = [...GUQIN_RHYTHM_GROUPS].reverse().find(([start]) => step >= start);
+    if (!group) continue;
+    const [groupStart, groupDuration] = group;
+    const pitch = sourcePitchByGroup.get(groupStart);
+    if (pitch === undefined) continue;
+    if (step < groupStart + groupDuration) {
+      quantized[step] = pitch;
+    }
+  }
+
+  return quantized;
 };
 
 const hasPlayableNotes = (notes: Array<number | null> | undefined) =>
@@ -485,11 +550,15 @@ const completeGeneratedTracks = (
   generatedTracks: Partial<Record<TrackVoice, Array<number | null>>>
 ) => {
   const completed = { ...generatedTracks };
+  if (completed.guqin) {
+    completed.guqin = quantizeGuqinRhythm(completed.guqin, leaderNotes);
+  }
   (['xiao', 'pipa', 'guqin'] as const).forEach((voice) => {
     if (!hasPlayableNotes(completed[voice])) {
       completed[voice] = deriveFallbackTrack(leaderNotes, completed, voice);
     }
   });
+  completed.guqin = quantizeGuqinRhythm(completed.guqin ?? deriveFallbackTrack(leaderNotes, completed, 'guqin'), leaderNotes);
   return completed as Record<Exclude<TrackVoice, 'user'>, Array<number | null>>;
 };
 
@@ -549,18 +618,27 @@ const scheduleTrackTone = (
   const noteEndTime = noteStartTime + beatDuration * getSustainedDuration(track.notes, step) * 0.92;
 
   const oscillator = ctx.createOscillator();
+  const overtoneOsc = ctx.createOscillator();
+  const filter = ctx.createBiquadFilter();
   const gainNode = ctx.createGain();
   const outputNode = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
 
   oscillator.type = synth.type;
+  overtoneOsc.type = synth.type === 'sine' ? 'triangle' : 'sawtooth';
   oscillator.frequency.setValueAtTime(frequency, noteStartTime);
+  overtoneOsc.frequency.setValueAtTime(frequency * 2.01, noteStartTime);
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(Math.max(900, frequency * 4.2), noteStartTime);
+  filter.Q.value = 0.9;
 
   gainNode.gain.setValueAtTime(0, noteStartTime);
   gainNode.gain.linearRampToValueAtTime(synth.gain, noteStartTime + synth.attack);
   gainNode.gain.setValueAtTime(synth.gain, Math.max(noteStartTime + synth.attack, noteEndTime - synth.release));
   gainNode.gain.linearRampToValueAtTime(0, noteEndTime);
 
-  oscillator.connect(gainNode);
+  oscillator.connect(filter);
+  overtoneOsc.connect(filter);
+  filter.connect(gainNode);
   if (outputNode) {
     outputNode.pan.setValueAtTime(synth.pan, noteStartTime);
     gainNode.connect(outputNode);
@@ -570,7 +648,9 @@ const scheduleTrackTone = (
   }
 
   oscillator.start(noteStartTime);
+  overtoneOsc.start(noteStartTime);
   oscillator.stop(noteEndTime);
+  overtoneOsc.stop(noteEndTime);
 };
 
 const MOBILE_STAFF_LINES = [4, 6, 8, 10, 12];
@@ -780,12 +860,14 @@ function FreezeActions({
 }
 
 function ScoreLane({
+  label,
   color,
   notes,
   activeStep,
   notesVisible = true,
   delay = 0,
 }: {
+  label: string;
   color: string;
   notes: Array<number | null>;
   activeStep: number;
@@ -804,6 +886,9 @@ function ScoreLane({
       transition={{ duration: 0.45, delay, ease: motionEase }}
       className="rounded-lg border border-[#d8bd8d] bg-[#fff9f0]/90 px-2.5 py-2"
     >
+      <div className="mb-1 flex items-center justify-between px-0.5 text-[11px] text-[#7a4d36]">
+        <span className="font-medium">{label}</span>
+      </div>
       <div className="relative mx-auto overflow-hidden rounded-md border border-[#e5cfaa] bg-[#fbf4e7]" style={{ width: '100%', height: 78 }}>
         <div
           className="absolute left-1/2 top-1/2"
@@ -1077,19 +1162,34 @@ export default function App() {
     const AudioContextClass = window.AudioContext || browserWindow.webkitAudioContext;
     if (!AudioContextClass) return;
 
-    const ctx = audioCtx.current ?? new AudioContextClass();
-    audioCtx.current = ctx;
-    const oscillator = ctx.createOscillator();
-    const gain = ctx.createGain();
-    oscillator.type = 'sine';
-    oscillator.frequency.value = frequency;
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
-    oscillator.connect(gain);
-    gain.connect(ctx.destination);
-    oscillator.start();
-    oscillator.stop(ctx.currentTime + duration + 0.02);
+  const ctx = audioCtx.current ?? new AudioContextClass();
+  audioCtx.current = ctx;
+  void ctx.resume();
+  const mainOsc = ctx.createOscillator();
+  const overtoneOsc = ctx.createOscillator();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+
+  mainOsc.type = 'triangle';
+  overtoneOsc.type = 'sawtooth';
+  mainOsc.frequency.value = frequency;
+  overtoneOsc.frequency.value = frequency * 2.01;
+  filter.type = 'lowpass';
+  filter.frequency.value = Math.max(700, frequency * 4.5);
+  filter.Q.value = 0.8;
+
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.11, ctx.currentTime + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+
+  mainOsc.connect(filter);
+  overtoneOsc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  mainOsc.start();
+  overtoneOsc.start();
+  mainOsc.stop(ctx.currentTime + duration + 0.02);
+  overtoneOsc.stop(ctx.currentTime + duration + 0.02);
   };
 
   const resetCompose = () => {
@@ -1105,7 +1205,7 @@ export default function App() {
     setStage('input');
     setCaptureStarted(false);
     setCapturePhase('idle');
-    setCountdown(4);
+    setCountdown(CAPTURE_COUNT_IN_BEATS);
     setRecordProgress(0);
     setRecordBeat(0);
     setMicError('');
@@ -1116,11 +1216,40 @@ export default function App() {
     resetCompose();
   };
 
+  const testTone = () => {
+    ping(523.25, 0.18);
+    window.setTimeout(() => ping(659.25, 0.18), 220);
+    window.setTimeout(() => ping(783.99, 0.22), 440);
+  };
+
   useEffect(() => {
     return () => {
       clearTimers();
       stopMicCapture();
       audioCtx.current?.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    const resumeAudio = () => {
+      void audioCtx.current?.resume();
+      void recordCtx.current?.resume();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        resumeAudio();
+      }
+    };
+
+    window.addEventListener('focus', resumeAudio);
+    window.addEventListener('pointerdown', resumeAudio);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', resumeAudio);
+      window.removeEventListener('pointerdown', resumeAudio);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -1177,7 +1306,7 @@ export default function App() {
     setCapturePhase('idle');
     setRecordProgress(0);
     setRecordBeat(0);
-    setCountdown(4);
+    setCountdown(CAPTURE_COUNT_IN_BEATS);
     setDetectedPitch('待识别');
     setStage('capture');
   };
@@ -1190,7 +1319,7 @@ export default function App() {
     setCapturePhase('idle');
     setRecordProgress(0);
     setRecordBeat(0);
-    setCountdown(4);
+    setCountdown(CAPTURE_COUNT_IN_BEATS);
 
     if (mode === 'humming') {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -1320,13 +1449,19 @@ export default function App() {
   };
 
   const choosePresetAndContinue = (presetIndex: number) => {
-    setPresetId(PRESETS[presetIndex % PRESETS.length].id);
+    const selectedPreset = PRESETS[presetIndex % PRESETS.length];
+    setPresetId(selectedPreset.id);
     setInputMode('preset');
-    setLeaderNotes(DEFAULT_LEADER_NOTES);
+    const presetNotes = selectedPreset.id === 'molihua'
+      ? MOLIHUA_LEADER_NOTES
+      : selectedPreset.id === 'lanhuacao'
+        ? LANHUACAO_LEADER_NOTES
+        : XUANZU_LEADER_NOTES;
+    setLeaderNotes(presetNotes);
     setMicError('');
     setDetectedPitch('待识别');
     stopMicCapture();
-    void startComposeGeneration(DEFAULT_LEADER_NOTES);
+    void startComposeGeneration(presetNotes);
   };
 
   const enterCompose = () => {
@@ -1358,7 +1493,7 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             melody,
-            style_prompt: '敦煌四重奏，使用箫、琵琶、古琴，保持主旋律清晰',
+            style_prompt: '敦煌四重奏，使用笛子主旋律、箫、琵琶、都塔尔低音，保持主旋律清晰',
           }),
           signal: controller.signal,
         });
@@ -1400,12 +1535,9 @@ export default function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : '后端请求失败';
       if (requestId === generationRequestId.current) {
-        clearTimers();
-        setPlayhead(0);
-        setGeneratedTrackNotes({});
-        setTracks([buildTrackLibrary(inputNotes, {})[0]]);
-        setActiveTrackCount(1);
-        setGenerationError(`后端生成失败：${message}`);
+        const fallbackTracks = completeGeneratedTracks(inputNotes, {});
+        setGeneratedTrackNotes(fallbackTracks);
+        setGenerationError(`后端连接超时，已先使用本地试听配器：${message}`);
       }
     }
   };
@@ -1423,8 +1555,13 @@ export default function App() {
       ping(440, 0.08);
       timers.current.push(
         window.setTimeout(async () => {
-          setLeaderNotes(DEFAULT_LEADER_NOTES);
-          void startComposeGeneration(DEFAULT_LEADER_NOTES);
+          const presetNotes = preset.id === 'molihua'
+            ? MOLIHUA_LEADER_NOTES
+            : preset.id === 'lanhuacao'
+              ? LANHUACAO_LEADER_NOTES
+              : XUANZU_LEADER_NOTES;
+          setLeaderNotes(presetNotes);
+          void startComposeGeneration(presetNotes);
         }, 900)
       );
       return;
@@ -1451,7 +1588,7 @@ export default function App() {
         setCountdown(CAPTURE_COUNT_IN_BEATS - index);
         setRecordBeat(0);
         setRecordProgress(0);
-        ping(660, 0.055);
+        ping(440, CAPTURE_BEAT_MS / 1000);
       }, firstCountInOffset + index * CAPTURE_BEAT_MS);
       timers.current.push(timer);
     });
@@ -1568,6 +1705,15 @@ export default function App() {
             className="input-record-button flex h-[72px] w-full max-w-[286px] items-center justify-center rounded-[999px] bg-[#5b3829] text-[17px] text-[#f7ead1] disabled:opacity-60"
           >
             {isRequestingMic ? '请求麦克风' : isCheckingBackend ? '连接后端' : '开始录音'}
+                </button>
+              </div>
+              <div className="mt-3 flex justify-center">
+                <button
+                  type="button"
+                  onClick={testTone}
+                  className="flex h-10 items-center justify-center rounded-[999px] border border-[#d7b37a] bg-[#fff6de] px-4 text-[12px] font-semibold text-[#6f4a35] transition-colors hover:bg-[#f8ebcb]"
+                >
+                  测试音色
                 </button>
               </div>
               <div className="input-bpm-copy mt-4 text-center text-[12px] font-semibold leading-[1.55] text-[#8a5d43]">
@@ -1731,8 +1877,9 @@ export default function App() {
 
         <div className="compose-tracks mt-3 grid gap-2.5 overflow-y-auto pb-1">
           {tracks.map((track, index) => (
-            <ScoreLane
+          <ScoreLane
               key={track.id}
+              label={track.label}
               color={track.color}
               notes={track.notes}
               activeStep={playhead}
